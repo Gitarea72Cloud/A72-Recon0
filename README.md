@@ -14,7 +14,8 @@ for the current link if you don't have it.
 
 Fully serverless, no VPC:
 
-- **S3** — static frontend hosting (`frontend/`)
+- **S3 + CloudFront (OAC)** — static frontend hosting (`frontend/`); the
+  bucket stays fully private, CloudFront is the only thing allowed to read it
 - **Cognito** — auth; students are bulk-imported, not self-signup
 - **API Gateway (HTTP API)** — Cognito JWT authorizer
 - **Lambda** (Python 3.12) — `start-session`, `terminal-exec`, `submit-answer`,

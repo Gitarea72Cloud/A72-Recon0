@@ -219,22 +219,60 @@ Resources:
             Method: GET
 
   # ---------------------------------------------------------------------
-  # Static site — S3 website hosting (MVP). Add CloudFront later for a
-  # custom domain / HTTPS on the apex; skipped for now to keep this the
-  # simplest possible thing that works.
+  # Static site — private S3 origin behind CloudFront with Origin Access
+  # Control. Not a public S3 website bucket: this account has S3 Block
+  # Public Access enabled at the account level (org-wide guardrail), so a
+  # public bucket policy would be rejected outright, and OAC is the current
+  # AWS-recommended pattern anyway (also gets HTTPS/CDN for free).
   # ---------------------------------------------------------------------
   WebsiteBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub a72-recon0-web-${Stage}-${AWS::AccountId}
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: index.html
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  WebsiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub a72-recon0-oac-${Stage}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  WebsiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebsiteOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          # AWS managed "CachingOptimized" policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CustomErrorResponses:
+          # SPA fallback: unknown paths (client-side routes) serve index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
 
   WebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -242,11 +280,15 @@ Resources:
       Bucket: !Ref WebsiteBucket
       PolicyDocument:
         Statement:
-          - Sid: PublicReadGetObject
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
             Effect: Allow
-            Principal: "*"
+            Principal:
+              Service: cloudfront.amazonaws.com
             Action: s3:GetObject
             Resource: !Sub arn:aws:s3:::${WebsiteBucket}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebsiteDistribution}
 
 Outputs:
   ApiUrl:
@@ -258,7 +300,9 @@ Outputs:
     Value: !Ref UserPoolClient
   WebsiteBucketName:
     Value: !Ref WebsiteBucket
+  WebsiteDistributionId:
+    Value: !Ref WebsiteDistribution
   WebsiteUrl:
-    Value: !Sub http://${WebsiteBucket}.s3-website.${AWS::Region}.amazonaws.com
+    Value: !Sub https://${WebsiteDistribution.DomainName}
   TableName:
     Value: !Ref DataTable

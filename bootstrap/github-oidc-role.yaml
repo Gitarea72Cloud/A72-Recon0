@@ -107,16 +107,21 @@ Resources:
                   - s3:CreateBucket
                   - s3:DeleteBucket
                   - s3:PutBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:DeleteBucketPolicy
                   - s3:PutBucketTagging
+                  - s3:GetBucketTagging
                   - s3:TagResource
                   - s3:GetObject
                   - s3:PutObject
                   - s3:DeleteObject
                   - s3:ListBucket
-                  - s3:PutBucketWebsite
                   - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketPublicAccessBlock
                   - s3:PutBucketVersioning
+                  - s3:GetBucketVersioning
                   - s3:PutEncryptionConfiguration
+                  - s3:GetEncryptionConfiguration
                 Resource:
                   - "arn:aws:s3:::aws-sam-cli-managed-default*"
                   - "arn:aws:s3:::a72-recon0-web-*"
@@ -158,6 +163,21 @@ Resources:
                   - dynamodb:TagResource
                 Resource:
                   - !Sub arn:aws:dynamodb:*:${AWS::AccountId}:table/a72-recon0-*
+              - Sid: CloudFront
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateDistribution
+                  - cloudfront:GetDistribution
+                  - cloudfront:UpdateDistribution
+                  - cloudfront:DeleteDistribution
+                  - cloudfront:TagResource
+                  - cloudfront:CreateOriginAccessControl
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:UpdateOriginAccessControl
+                  - cloudfront:DeleteOriginAccessControl
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                Resource: "*"  # CloudFront distribution/OAC ARNs are only known after creation, same as Cognito below
               - Sid: Cognito
                 Effect: Allow
                 Action:
