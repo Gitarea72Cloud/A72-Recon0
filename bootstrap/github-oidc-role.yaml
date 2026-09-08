@@ -1,11 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   One-time, account-side setup for A72-Recon0's GitHub Actions pipeline.
-  Run this ONCE, yourself, from a machine/CloudShell that already has your
-  own AWS credentials configured — Claude cannot reach your AWS account from
-  its session (no network path there at all), so this step can't be done on
-  your behalf. After this exists, every push to main deploys via OIDC with
-  no long-lived AWS keys stored in GitHub.
+  Deploy this with credentials for account 738388288350 (any profile that
+  can assume/use that account works — an agent session with a configured
+  AWS CLI profile can run this too). After this exists, every push to main
+  deploys via OIDC with no long-lived AWS keys stored in GitHub.
 
 Parameters:
   GitHubOrg:
@@ -14,6 +13,20 @@ Parameters:
   RepoName:
     Type: String
     Default: A72-Recon0
+  GitHubOrgId:
+    Type: String
+    Default: "183365091"
+    Description: >
+      GitHub's immutable numeric ID for GitHubOrg. GitHub includes this in
+      the OIDC token's `sub` claim (repo:ORG@ORGID/REPO@REPOID:...) whenever
+      the org or repo has ever been renamed/transferred, to stop a renamed-
+      away name from being reclaimed and reused against an old trust policy.
+      Find the current value by decoding a token from this repo's Actions
+      run (see DEPLOY.md) if this ever needs to change.
+  GitHubRepoId:
+    Type: String
+    Default: "1361019233"
+    Description: GitHub's immutable numeric ID for RepoName. See GitHubOrgId.
   CreateOidcProvider:
     Type: String
     Default: "true"
@@ -56,8 +69,11 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
                 # Deploys only from pushes to main on this exact repo — not
-                # forks, not other branches, not pull_request events.
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${RepoName}:ref:refs/heads/main
+                # forks, not other branches, not pull_request events. Uses
+                # the ID-qualified subject form (see GitHubOrgId/GitHubRepoId)
+                # because GitHub sends that form once an org/repo has ever
+                # been renamed or transferred.
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}@${GitHubOrgId}/${RepoName}@${GitHubRepoId}:ref:refs/heads/main
       Policies:
         - PolicyName: A72Recon0DeployPolicy
           PolicyDocument:

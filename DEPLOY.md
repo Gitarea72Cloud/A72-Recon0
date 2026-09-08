@@ -4,16 +4,14 @@ Target account: **738388288350**, region **eu-south-2** (AWS "Spain").
 
 The pipeline uses GitHub OIDC to assume an AWS role — no long-lived AWS
 access keys are ever stored in GitHub. That role has to exist before the
-first deploy can work, and creating it requires *your* AWS credentials, not
-Claude's — an agent session has no network path to AWS at all (verified: the
-egress proxy rejects it outright), so this one step has to happen from a
-terminal where you're already logged into this AWS account, or from AWS
-CloudShell in the console.
+first deploy can work; creating it just needs credentials for account
+`738388288350` configured in the AWS CLI (a profile in your own terminal,
+AWS CloudShell, or an agent session with such a profile all work).
 
 ## 1. One-time: create the OIDC provider + deploy role
 
-From your own machine or AWS CloudShell, with credentials for account
-`738388288350` already configured:
+With credentials for account `738388288350` configured (`--profile <name>`
+if it's not your default):
 
 ```bash
 # Check whether this account already has a GitHub OIDC provider
@@ -36,6 +34,17 @@ branches, not pull requests, not forks. `.github/workflows/deploy.yml`
 already points at it by ARN
 (`arn:aws:iam::738388288350:role/A72Recon0-GitHubActionsDeployRole`), so
 there's nothing further to configure in GitHub itself.
+
+**Gotcha hit on first deploy:** if this GitHub org or repo has ever been
+renamed or transferred, GitHub sends an ID-qualified `sub` claim
+(`repo:ORG@ORGID/REPO@REPOID:ref:...`) instead of the plain
+`repo:ORG/REPO:ref:...` form, and a trust policy written for the plain form
+gets `Not authorized to perform sts:AssumeRoleWithWebIdentity` even though
+everything else is correct. The template's `GitHubOrgId`/`GitHubRepoId`
+parameters (defaulted to this repo's actual IDs) already account for this.
+If you ever need to rediscover the IDs, decode a token from an Actions run:
+add a step with
+`curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value | cut -d. -f2 | base64 -d | jq`.
 
 The attached policy (`bootstrap/github-oidc-role.yaml`) is a **first pass**,
 scoped by the `a72-recon0-*` naming convention everywhere the service
