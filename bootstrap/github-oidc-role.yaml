@@ -169,6 +169,8 @@ Resources:
                   - cognito-idp:UpdateUserPoolClient
                   - cognito-idp:CreateGroup
                   - cognito-idp:DeleteGroup
+                  - cognito-idp:GetGroup
+                  - cognito-idp:UpdateGroup
                   - cognito-idp:DescribeUserPool
                   - cognito-idp:TagResource
                 Resource: "*"  # Cognito ARNs are only known after creation; tighten with a naming-tag condition if desired
