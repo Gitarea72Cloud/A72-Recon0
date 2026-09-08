@@ -53,13 +53,63 @@ Gateway) had to stay broader since those ARNs aren't knowable before first
 creation. Worth tightening once the stack has deployed once and the real
 ARNs exist.
 
-## 2. Push to main
+## 2. One-time: point a CloudFront distribution at the frontend bucket
+
+The frontend bucket (`a72-recon0-web-${Stage}-738388288350`) is private —
+S3 Block Public Access is on at the account level, so a public bucket
+policy is rejected outright. It's served through CloudFront with Origin
+Access Control (OAC) instead, which also means HTTPS/CDN for free.
+
+**Known gotcha:** this account currently can't create *new* CloudFront
+distributions via CloudFormation or the API — every attempt fails with
+`Access denied for operation 'AWS::CloudFront::Distribution: Your account
+must be verified before you can add new CloudFront resources'`. Confirmed
+account-wide (identical error under an admin IAM user and a scoped role,
+and in a test stack homed in us-east-1 instead of eu-south-2 — not a
+permissions or region issue). It also blocks *creating a new* distribution
+by hand in the console. **Editing an existing distribution is not gated**,
+so if the account already has an idle/unused CloudFront distribution,
+repurposing it works around this entirely; a new Origin Access Control
+resource can still be created fine even while distribution creation is
+blocked. Fixing this for real means an AWS Support case asking to verify
+the account for new CloudFront resources — until then, reuse-and-edit is
+the workflow.
+
+Whichever distribution you use, point it at the frontend bucket:
+
+| Setting | Value |
+|---|---|
+| Origin domain | `<bucket>.s3.eu-south-2.amazonaws.com` (the S3 **REST** endpoint, not the website-hosting endpoint — OAC/SigV4 needs the REST endpoint) |
+| Origin path | (blank) |
+| Origin access | Origin access control (OAC), signing behavior "Sign requests" |
+| Viewer protocol policy | Redirect HTTP to HTTPS |
+| Allowed methods | GET, HEAD |
+| Cache policy | CachingOptimized (AWS managed) |
+| Default root object | `index.html` |
+| Custom error responses | 403 → `/index.html` (200), 404 → `/index.html` (200) — SPA fallback for client-side routes |
+
+Then set the distribution's ID as a repo variable so the pipeline knows
+about it:
+
+```bash
+gh variable set CLOUDFRONT_DISTRIBUTION_ID --body "<distribution-id>"
+```
+
+`template.yaml`'s `WebsiteBucketPolicy` only gets created once
+`CloudFrontDistributionId` is passed to `sam deploy` (which
+`deploy.yml` does automatically from that repo variable) — it grants
+`s3:GetObject` scoped to that exact distribution's ARN via
+`AWS:SourceArn`, nothing broader.
+
+## 3. Push to main
 
 Every push to `main` now runs `.github/workflows/deploy.yml`: `sam build`,
-`sam deploy` to `eu-south-2`, then syncs `frontend/` to the resulting S3
-bucket. Watch it under the repo's **Actions** tab.
+`sam deploy` to `eu-south-2`, syncs `frontend/` to the resulting S3
+bucket, then invalidates the CloudFront cache (skipped automatically if
+`CLOUDFRONT_DISTRIBUTION_ID` isn't set yet). Watch it under the repo's
+**Actions** tab.
 
-## 3. Smoke-test it
+## 4. Smoke-test it
 
 ```bash
 aws cloudformation describe-stacks --stack-name a72-recon0-dev \
