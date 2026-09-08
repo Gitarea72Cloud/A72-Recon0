@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  One-time, account-side setup for A72-Recon0's GitHub Actions pipeline.
+  Run this ONCE, yourself, from a machine/CloudShell that already has your
+  own AWS credentials configured — Claude cannot reach your AWS account from
+  its session (no network path there at all), so this step can't be done on
+  your behalf. After this exists, every push to main deploys via OIDC with
+  no long-lived AWS keys stored in GitHub.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: Gitarea72Cloud
+  RepoName:
+    Type: String
+    Default: A72-Recon0
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set to "false" if this account already has a GitHub Actions OIDC
+      provider (arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com)
+      — check with: aws iam list-open-id-connect-providers
+
+Conditions:
+  ShouldCreateOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        # GitHub's OIDC thumbprint rotates rarely; AWS validates the cert
+        # chain regardless, this is a defense-in-depth fallback value.
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: A72Recon0-GitHubActionsDeployRole
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                # Deploys only from pushes to main on this exact repo — not
+                # forks, not other branches, not pull_request events.
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${RepoName}:ref:refs/heads/main
+      Policies:
+        - PolicyName: A72Recon0DeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CloudFormationDeploy
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:ListStackResources
+                Resource:
+                  - !Sub arn:aws:cloudformation:*:${AWS::AccountId}:stack/a72-recon0-*/*
+                  - !Sub arn:aws:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*
+              - Sid: SamDeploymentBucket
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutBucketPolicy
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:PutBucketWebsite
+                  - s3:PutBucketPublicAccessBlock
+                Resource:
+                  - "arn:aws:s3:::aws-sam-cli-managed-default*"
+                  - "arn:aws:s3:::a72-recon0-web-*"
+              - Sid: LambdaAndLayers
+                Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:GetFunction
+                  - lambda:DeleteFunction
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:GetFunctionConfiguration
+                  - lambda:ListVersionsByFunction
+                  - lambda:PublishVersion
+                  - lambda:PublishLayerVersion
+                  - lambda:GetLayerVersion
+                  - lambda:DeleteLayerVersion
+                  - lambda:TagResource
+                Resource:
+                  - !Sub arn:aws:lambda:*:${AWS::AccountId}:function:a72-recon0-*
+                  - !Sub arn:aws:lambda:*:${AWS::AccountId}:layer:a72-recon0-*
+                  - !Sub arn:aws:lambda:*:${AWS::AccountId}:layer:a72-recon0-*:*
+              - Sid: ApiGateway
+                Effect: Allow
+                Action:
+                  - apigateway:*
+                Resource:
+                  - "arn:aws:apigateway:*::/apis"
+                  - "arn:aws:apigateway:*::/apis/*"
+              - Sid: DynamoDb
+                Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:TagResource
+                Resource:
+                  - !Sub arn:aws:dynamodb:*:${AWS::AccountId}:table/a72-recon0-*
+              - Sid: Cognito
+                Effect: Allow
+                Action:
+                  - cognito-idp:CreateUserPool
+                  - cognito-idp:DeleteUserPool
+                  - cognito-idp:UpdateUserPool
+                  - cognito-idp:CreateUserPoolClient
+                  - cognito-idp:DeleteUserPoolClient
+                  - cognito-idp:UpdateUserPoolClient
+                  - cognito-idp:CreateGroup
+                  - cognito-idp:DeleteGroup
+                  - cognito-idp:DescribeUserPool
+                  - cognito-idp:TagResource
+                Resource: "*"  # Cognito ARNs are only known after creation; tighten with a naming-tag condition if desired
+              - Sid: IamForLambdaExecRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PassRole
+                  - iam:TagRole
+                Resource:
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/a72-recon0-*
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DescribeLogGroups
+                Resource:
+                  - !Sub arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/a72-recon0-*
+
+Outputs:
+  DeployRoleArn:
+    Description: Put this in the repo's GitHub Actions variables/secrets as AWS_DEPLOY_ROLE_ARN
+    Value: !GetAtt GitHubActionsDeployRole.Arn

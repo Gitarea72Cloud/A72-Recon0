@@ -1,0 +1,68 @@
+name: Deploy A72-Recon0
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # required for OIDC — no long-lived AWS keys in this repo
+  contents: read
+
+env:
+  AWS_REGION: eu-south-2                                              # AWS "Spain" region
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::738388288350:role/A72Recon0-GitHubActionsDeployRole
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      # This step is the whole reason AWS access to this repo is safe to
+      # grant: it exchanges GitHub's OIDC token for short-lived AWS
+      # credentials scoped to the role in bootstrap/github-oidc-role.yaml,
+      # nothing stored in GitHub ever.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: sam build
+        run: sam build
+
+      - name: sam deploy
+        run: |
+          sam deploy \
+            --stack-name a72-recon0-dev \
+            --region ${{ env.AWS_REGION }} \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides Stage=dev
+
+      - name: Sync static frontend to S3
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name a72-recon0-dev \
+            --region ${{ env.AWS_REGION }} \
+            --query "Stacks[0].Outputs[?OutputKey=='WebsiteBucketName'].OutputValue" \
+            --output text)
+          aws s3 sync frontend/ "s3://${BUCKET}" --delete
+
+      - name: Print deployed URLs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name a72-recon0-dev \
+            --region ${{ env.AWS_REGION }} \
+            --query "Stacks[0].Outputs" \
+            --output table

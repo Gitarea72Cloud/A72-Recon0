@@ -1,0 +1,19 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "a72-recon0-dev"
+region = "eu-south-2"
+capabilities = "CAPABILITY_NAMED_IAM"
+resolve_s3 = true
+confirm_changeset = false
+fail_on_empty_changeset = false
+parameter_overrides = "Stage=\"dev\""
+
+[prod.deploy.parameters]
+stack_name = "a72-recon0-prod"
+region = "eu-south-2"
+capabilities = "CAPABILITY_NAMED_IAM"
+resolve_s3 = true
+confirm_changeset = false
+fail_on_empty_changeset = false
+parameter_overrides = "Stage=\"prod\""

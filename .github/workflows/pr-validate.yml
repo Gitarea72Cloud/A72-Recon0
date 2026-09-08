@@ -1,0 +1,36 @@
+name: Validate
+
+# Runs on every PR and push to any branch. No AWS credentials involved —
+# this only lints/validates the template and the Python, so it needs no
+# OIDC role and stays safe to run on forks/PRs too.
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: sam validate
+        run: sam validate --lint
+
+      - name: Install Python deps for tests/lint
+        run: pip install ruff --quiet
+
+      - name: ruff (lint the Lambda source)
+        run: ruff check src/ layer/
