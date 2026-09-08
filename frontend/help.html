@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .pagehead { padding: 48px 0 32px; border-bottom: 1px solid var(--line); margin-bottom: 40px; }
+  .pagehead h1 { font-size: 30px; margin-bottom: 8px; }
+  section { margin-bottom: 44px; }
+  section h2 { font-size: 19px; margin-bottom: 14px; }
+  ul.plain { margin: 0 0 14px; padding-left: 1.2em; }
+  ul.plain li { margin-bottom: 8px; color: var(--ink); }
+  .cmdtable { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .cmdtable th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .cmdtable td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .cmdtable tr:last-child td { border-bottom: none; }
+  .tblwrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html" class="active">Help</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="wrap">
+    <header class="pagehead">
+      <h1>Help &amp; test rules</h1>
+      <p class="muted" style="margin:0">Everything you need before you start — no surprises once the test begins.</p>
+    </header>
+
+    <section>
+      <h2>The rules</h2>
+      <ul class="plain">
+        <li>The test is <strong>5 questions</strong>, all about the Linux command line. It takes most students 10–15 minutes.</li>
+        <li>Every question uses a small simulated terminal — run whatever commands you like, then type your answer in the box beside it.</li>
+        <li>Once you submit an answer, you can't go back and change it.</li>
+        <li>This isn't graded pass/fail on individual questions — it's a placement tool. There's no benefit to guessing, and no penalty for taking your time.</li>
+        <li>Once the test finishes, your result is final. There are no retries and no manual override.</li>
+        <li>Every command you type is logged, but nothing about how you got the answer affects your result — only the answer itself.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>The simulated terminal</h2>
+      <p>It's <strong>not a real shell</strong> — no real OS, container, or network underneath it, just a small filesystem and command interpreter for that one question. Nothing you do there can break anything or affect other students. Treat it as scratch space: explore, try commands, and once you've found the answer, type it into the answer box — not into the terminal.</p>
+    </section>
+
+    <section>
+      <h2>Command reference</h2>
+      <p class="muted">Everything the terminal understands. Standard Linux syntax — pipes (<code class="inline">|</code>) work between any of these.</p>
+      <div class="tblwrap">
+        <table class="cmdtable">
+          <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">pwd</td><td>Print the current directory.</td></tr>
+            <tr><td class="mono">ls</td><td>List files. Add <code class="inline">-l</code> for a long listing (permissions, size, date), <code class="inline">-la</code> to include <code class="inline">.</code> and <code class="inline">..</code>.</td></tr>
+            <tr><td class="mono">cat &lt;file&gt;</td><td>Print a file's contents.</td></tr>
+            <tr><td class="mono">stat / wc / du &lt;file&gt;</td><td>Report a file's size in bytes.</td></tr>
+            <tr><td class="mono">file &lt;file&gt;</td><td>Report what kind of content a file holds.</td></tr>
+            <tr><td class="mono">echo "text"</td><td>Print text back out — useful piped into other commands.</td></tr>
+            <tr><td class="mono">base64 -d</td><td>Decode Base64 input. Use with a pipe, e.g. <code class="inline">cat secret.b64 | base64 -d</code>.</td></tr>
+            <tr><td class="mono">base64 -e</td><td>Encode input to Base64.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Trouble signing in?</h2>
+      <p>Use the temporary password from your invite email on your first sign-in — you'll be asked to set a new one right away. If your account isn't working, contact your instructor rather than trying to sign up for a new one; accounts are set up in advance and there's no open self-registration.</p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A72-Recon0 · Evolve Master — Cybersecurity</span>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>A72.renderAuthNav(document.getElementById("authNav"));</script>
+</body>
+</html>

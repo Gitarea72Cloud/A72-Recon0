@@ -105,9 +105,10 @@ def lambda_handler(event, context):
 
     body = json.loads(event.get("body") or "{}")
     item_id = body.get("itemId")
+    domain = body.get("domain")
     command = body.get("command", "")
-    if not item_id or not command:
-        return response(400, {"error": "itemId and command are required"})
+    if not item_id or not domain or not command:
+        return response(400, {"error": "itemId, domain and command are required"})
 
     session_key = f"SESSION#{session_id}"
     session = db.get_item(f"STUDENT#{student}", session_key)
@@ -118,10 +119,7 @@ def lambda_handler(event, context):
     state = db.get_item(f"STUDENT#{student}", term_key)
     if not state:
         # first command against this item: seed the virtual fs from the question bank
-        question = next(
-            (q for q in db.query_prefix("QUESTION#", f"ITEM#{item_id}") if q),
-            None,
-        )
+        question = db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}")
         files = question["scenario"]["files"] if question else {}
         state = {
             "PK": f"STUDENT#{student}",

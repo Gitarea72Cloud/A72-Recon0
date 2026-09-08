@@ -3,23 +3,97 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A72-Recon0</title>
+<title>A72-Recon0 — Placement Test</title>
+<link rel="stylesheet" href="theme.css">
 <style>
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:#0b1420;color:#dfe6ef;font-family:ui-monospace,"SF Mono",Menlo,monospace;}
-  .card{max-width:440px;padding:32px;text-align:center}
-  h1{font-size:20px;letter-spacing:.02em;margin:0 0 10px}
-  p{color:#93a5bc;font-size:14px;line-height:1.6;margin:0}
-  code{background:#16283a;padding:2px 6px;border-radius:5px}
+  .hero { padding: 72px 0 56px; text-align: center; }
+  .hero .eyebrow {
+    font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  .hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; max-width: 20ch; margin: 0 auto 16px; }
+  .hero p.lede { font-size: 17.5px; color: var(--muted); max-width: 56ch; margin: 0 auto 30px; }
+  .hero .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .steps { counter-reset: step; margin: 56px 0; }
+  .step { display: grid; grid-template-columns: 40px 1fr; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
+  .step:first-of-type { border-top: none; }
+  .step .num {
+    counter-increment: step; font-family: ui-monospace, monospace; font-weight: 700;
+    color: var(--accent); font-size: 20px;
+  }
+  .step .num::before { content: counter(step); }
+  .step h3 { font-size: 16px; margin: 0 0 4px; }
+  .step p { font-size: 14.5px; color: var(--muted); margin: 0; }
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>A72-Recon0</h1>
-    <p>Infrastructure is deployed — the real student-facing app isn't built yet.
-    This placeholder ships from <code>frontend/index.html</code> so the S3 sync
-    step in the pipeline has something to serve. Replace this directory with
-    the real SPA when Phase&nbsp;1 UI work starts.</p>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html" class="active">Home</a>
+    <a href="help.html">Help</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="wrap">
+    <header class="hero">
+      <p class="eyebrow">Evolve Master · Cybersecurity</p>
+      <h1>Find your starting point before Module&nbsp;1</h1>
+      <p class="lede">A short, hands-on placement test — real commands in a simulated Linux shell, not multiple choice.
+        It sorts you into a <strong>Basic</strong> or <strong>Advanced</strong> starting track so week one moves at the right pace for you.</p>
+      <div class="actions">
+        <a href="#" id="startBtn" class="btn btn-primary">Start the test</a>
+        <a href="help.html" class="btn btn-secondary">How it works</a>
+      </div>
+    </header>
+
+    <section class="steps">
+      <div class="step">
+        <div class="num"></div>
+        <div><h3>Sign in</h3><p>Use the account your instructor set up for you. First login asks you to set a new password.</p></div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div><h3>Answer 5 questions in a real terminal</h3><p>Each question gives you a small simulated filesystem. Run commands, find the answer, type it in — the terminal is scratch space, not the quiz.</p></div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div><h3>Get your track</h3><p>Takes about 10–15 minutes. Once it's done, it's final — no retries, nothing to prepare for in advance.</p></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 style="margin-bottom:6px">Before you start</h3>
+      <p class="muted" style="margin:0">This isn't a graded exam — it's here to help place you at the right pace, not to catch you out. See the <a href="help.html">help page</a> for the full rules and a command reference.</p>
+    </section>
   </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A72-Recon0 · Evolve Master — Cybersecurity</span>
+    <span class="mono">placement · Cohort 1 · Oct 2026</span>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+  A72.renderAuthNav(document.getElementById("authNav"));
+
+  document.getElementById("startBtn").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const signedIn = await A72.isSignedIn();
+    if (signedIn) {
+      location.href = "test.html";
+    } else {
+      A72.redirectToSignIn("test.html");
+    }
+  });
+</script>
 </body>
 </html>

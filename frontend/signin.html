@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .center { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 200px); padding: 40px 20px; }
+  .authcard { width: 100%; max-width: 380px; }
+  .authcard h1 { font-size: 22px; margin-bottom: 6px; }
+  .authcard p.sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: -8px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html">Help</a>
+  </nav>
+</div>
+
+<main class="center">
+  <div class="authcard card">
+
+    <div id="signInStep">
+      <h1>Sign in</h1>
+      <p class="sub">Use the account your instructor set up for you.</p>
+      <div id="signInError"></div>
+      <form id="signInForm">
+        <div class="field">
+          <label for="username">Email or username</label>
+          <input id="username" type="text" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="signInBtn">Sign in</button>
+      </form>
+      <p class="hint" style="margin-top:16px">First time signing in? Use the temporary password from your invite email — you'll be asked to set a new one next.</p>
+    </div>
+
+    <div id="newPasswordStep" hidden>
+      <h1>Set a new password</h1>
+      <p class="sub">This is your first sign-in — choose a permanent password to continue.</p>
+      <div id="newPasswordError"></div>
+      <form id="newPasswordForm">
+        <div class="field">
+          <label for="newPassword">New password</label>
+          <input id="newPassword" type="password" autocomplete="new-password" required minlength="10">
+        </div>
+        <p class="hint">At least 10 characters, with uppercase, lowercase, and a number.</p>
+        <button type="submit" class="btn btn-primary btn-block" id="newPasswordBtn">Set password &amp; continue</button>
+      </form>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>A72-Recon0 · Evolve Master — Cybersecurity</span>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const next = params.get("next") || "index.html";
+
+  A72.isSignedIn().then((signedIn) => { if (signedIn) location.href = next; });
+
+  function showError(el, message) {
+    el.innerHTML = message ? '<div class="alert alert-error">' + message + "</div>" : "";
+  }
+
+  let pendingChallenge = null;
+
+  document.getElementById("signInForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("signInBtn");
+    const errEl = document.getElementById("signInError");
+    showError(errEl, "");
+    btn.disabled = true;
+    btn.textContent = "Signing in…";
+    try {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const result = await A72.signIn(username, password);
+      if (result.status === "newPasswordRequired") {
+        pendingChallenge = result;
+        document.getElementById("signInStep").hidden = true;
+        document.getElementById("newPasswordStep").hidden = false;
+      } else {
+        location.href = next;
+      }
+    } catch (err) {
+      showError(errEl, err.message || "Couldn't sign in — check your email and password.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Sign in";
+    }
+  });
+
+  document.getElementById("newPasswordForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("newPasswordBtn");
+    const errEl = document.getElementById("newPasswordError");
+    showError(errEl, "");
+    btn.disabled = true;
+    btn.textContent = "Setting password…";
+    try {
+      const newPassword = document.getElementById("newPassword").value;
+      await A72.completeNewPassword(pendingChallenge.cognitoUser, pendingChallenge.userAttributes, newPassword);
+      location.href = next;
+    } catch (err) {
+      showError(errEl, err.message || "Couldn't set that password — try a different one.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Set password & continue";
+    }
+  });
+</script>
+</body>
+</html>

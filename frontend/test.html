@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .testwrap { max-width: 720px; margin: 0 auto; padding: 44px 24px 100px; }
+
+  /* ---- begin screen ---- */
+  .begin { text-align: center; padding: 40px 0; }
+  .begin h1 { font-size: 26px; margin-bottom: 10px; }
+  .begin p { color: var(--muted); max-width: 46ch; margin: 0 auto 26px; }
+
+  /* ---- progress ---- */
+  .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  .progress-row .label { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .progress-track { flex: 1; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+
+  .prompt-card { margin-bottom: 20px; }
+  .prompt-card h2 { font-size: 17px; margin: 0; }
+
+  /* ---- terminal ---- */
+  .term-panel {
+    background: var(--code-bg); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--line); box-shadow: var(--shadow);
+    display: flex; flex-direction: column; height: 300px; margin-bottom: 20px;
+  }
+  .term-titlebar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.07); flex: 0 0 auto; }
+  .term-dot { width: 9px; height: 9px; border-radius: 50%; opacity: .85; }
+  .term-dot.r { background: #ff5f56; } .term-dot.y { background: #ffbd2e; } .term-dot.g { background: #27c93f; }
+  .term-name { margin-left: 6px; font-family: ui-monospace, monospace; font-size: 11px; color: #8296ac; }
+  .term-screen { flex: 1; overflow-y: auto; padding: 12px 14px; font-family: ui-monospace, monospace; font-size: 12.8px; color: var(--code-ink); line-height: 1.65; }
+  .term-line { white-space: pre-wrap; word-break: break-word; }
+  .term-line.term-cmd { color: #7fe3d4; }
+  .term-line.term-err { color: #ff8a8a; }
+  .term-inputrow { display: flex; align-items: center; gap: 8px; padding: 8px 14px 11px; flex: 0 0 auto; }
+  .term-ps1 { color: #6fd68a; font-size: 12.5px; white-space: nowrap; font-family: ui-monospace, monospace; }
+  .term-input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--code-ink); font-size: 12.8px; font-family: ui-monospace, monospace; }
+
+  .answer-row { display: flex; gap: 10px; }
+  .answer-row input { flex: 1; }
+
+  /* ---- result ---- */
+  .result { text-align: center; padding: 40px 0; }
+  .result .track-badge { font-size: 15px; padding: 8px 18px; margin-bottom: 18px; }
+  .result h1 { font-size: 28px; margin-bottom: 12px; }
+  .result p.blurb { color: var(--muted); max-width: 50ch; margin: 0 auto 30px; }
+  .score-grid { margin: 0 auto 30px; max-width: 420px; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html">Help</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="testwrap" id="app">
+    <div class="begin">
+      <p class="muted">Loading…</p>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const app = document.getElementById("app");
+  let sessionId = null;
+  let currentItem = null; // {itemId, domain, prompt, type}
+
+  function renderBegin() {
+    app.innerHTML =
+      '<div class="begin">' +
+      '<h1>Ready when you are</h1>' +
+      '<p>5 questions, all in a simulated Linux terminal. Takes most people 10–15 minutes. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
+      '<button class="btn btn-primary" id="beginBtn">Begin the test</button>' +
+      "</div>";
+    document.getElementById("beginBtn").addEventListener("click", begin);
+  }
+
+  function renderError(message, opts) {
+    opts = opts || {};
+    app.innerHTML =
+      '<div class="alert alert-error">' + message + "</div>" +
+      (opts.retry ? '<button class="btn btn-secondary" id="retryBtn">Try again</button>' : "");
+    if (opts.retry) document.getElementById("retryBtn").addEventListener("click", renderBegin);
+  }
+
+  async function begin() {
+    app.innerHTML = '<div class="begin"><p class="muted">Starting…</p></div>';
+    try {
+      const res = await A72.apiFetch("/session/start", { method: "POST" });
+      if (!res.item) {
+        renderError("No questions are loaded yet — ask your instructor to seed the question bank.");
+        return;
+      }
+      sessionId = res.sessionId;
+      currentItem = res.item;
+      renderQuestion(res.item, res.itemIndex, res.totalItems);
+    } catch (err) {
+      if (err.status === 409 && err.body && err.body.sessionId) {
+        showResult(err.body.sessionId, err.body.track);
+      } else {
+        renderError("Couldn't start the test: " + err.message, { retry: true });
+      }
+    }
+  }
+
+  function appendLine(screen, text, cls) {
+    const div = document.createElement("div");
+    div.className = "term-line" + (cls ? " " + cls : "");
+    div.textContent = text;
+    screen.appendChild(div);
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  function renderQuestion(item, index, total) {
+    currentItem = item;
+    const pct = Math.round(((index - 1) / total) * 100);
+    app.innerHTML =
+      '<div class="progress-row">' +
+        '<span class="label">Question ' + index + ' of ' + total + '</span>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
+      '</div>' +
+      '<div class="card prompt-card"><h2>' + item.prompt + '</h2></div>' +
+      '<div class="term-panel">' +
+        '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">student@placement — bash</span></div>' +
+        '<div class="term-screen" id="termScreen"></div>' +
+        '<div class="term-inputrow">' +
+          '<span class="term-ps1">student@placement:~$</span>' +
+          '<input id="termInput" class="term-input" autocomplete="off" spellcheck="false" aria-label="Terminal command">' +
+        '</div>' +
+      '</div>' +
+      '<div id="answerError"></div>' +
+      '<div class="answer-row">' +
+        '<input id="answerInput" class="field" style="background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:11px 13px;border-radius:8px;font-size:15px" placeholder="Type your answer" autocomplete="off">' +
+        '<button class="btn btn-primary" id="submitAnswerBtn">Submit</button>' +
+      '</div>';
+
+    const screen = document.getElementById("termScreen");
+    const termInput = document.getElementById("termInput");
+    appendLine(screen, "Type a command to explore, then submit your answer below.");
+
+    termInput.addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter" || !termInput.value.trim()) return;
+      const command = termInput.value;
+      termInput.value = "";
+      appendLine(screen, "student@placement:~$ " + command, "term-cmd");
+      termInput.disabled = true;
+      try {
+        const res = await A72.apiFetch("/session/" + sessionId + "/terminal", {
+          method: "POST",
+          body: JSON.stringify({ itemId: item.itemId, domain: item.domain, command }),
+        });
+        (res.output || "").split("\n").forEach((line) => appendLine(screen, line, res.isError ? "term-err" : null));
+      } catch (err) {
+        appendLine(screen, "error: " + err.message, "term-err");
+      } finally {
+        termInput.disabled = false;
+        termInput.focus();
+      }
+    });
+
+    const submitBtn = document.getElementById("submitAnswerBtn");
+    const answerInput = document.getElementById("answerInput");
+    const errEl = document.getElementById("answerError");
+
+    async function submitAnswer() {
+      const answer = answerInput.value.trim();
+      if (!answer) return;
+      submitBtn.disabled = true;
+      answerInput.disabled = true;
+      errEl.innerHTML = "";
+      try {
+        const res = await A72.apiFetch("/session/" + sessionId + "/answer", {
+          method: "POST",
+          body: JSON.stringify({ itemId: item.itemId, domain: item.domain, answer }),
+        });
+        if (res.done) {
+          showResult(sessionId, res.track);
+        } else if (res.item) {
+          renderQuestion(res.item, res.itemIndex, res.totalItems);
+        } else {
+          renderError("Unexpected response from the server — please try refreshing.", { retry: true });
+        }
+      } catch (err) {
+        errEl.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+        submitBtn.disabled = false;
+        answerInput.disabled = false;
+      }
+    }
+
+    submitBtn.addEventListener("click", submitAnswer);
+    answerInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAnswer(); });
+  }
+
+  async function showResult(sid, track) {
+    app.innerHTML = '<div class="result"><p class="muted">Finishing up…</p></div>';
+    let result = { track, domain_scores: null, composite_score: null };
+    try {
+      const res = await A72.apiFetch("/session/" + sid + "/result");
+      if (res && res.track) result = res;
+    } catch (e) { /* fall back to the track we already have */ }
+
+    const isAdvanced = result.track === "Advanced";
+    const badgeClass = isAdvanced ? "advanced" : "basic";
+    const blurb = isAdvanced
+      ? "You're placed on the Advanced track — Module 1 will move at the standard pace."
+      : "You're placed on the Basic track — Module 1 starts with extra support to get you up to speed.";
+
+    let scoreRows = "";
+    if (result.domain_scores) {
+      scoreRows = Object.keys(result.domain_scores)
+        .filter((k) => k !== "_overall")
+        .map((k) => (
+          '<div class="card card-tight" style="display:flex;justify-content:space-between;margin-bottom:8px">' +
+          '<span class="muted">' + k.replace(/_/g, " ") + '</span><span class="mono">' + result.domain_scores[k] + '%</span></div>'
+        )).join("");
+    }
+
+    app.innerHTML =
+      '<div class="result">' +
+        '<div class="badge ' + badgeClass + ' track-badge">' + result.track + ' track</div>' +
+        '<h1>You’re all set</h1>' +
+        '<p class="blurb">' + blurb + '</p>' +
+        (scoreRows ? '<div class="score-grid">' + scoreRows + '</div>' : '') +
+        '<a href="index.html" class="btn btn-secondary">Back to home</a>' +
+      '</div>';
+  }
+
+  (async function init() {
+    const signedIn = await A72.isSignedIn();
+    A72.renderAuthNav(document.getElementById("authNav"));
+    if (!signedIn) { A72.redirectToSignIn("test.html"); return; }
+    renderBegin();
+  })();
+})();
+</script>
+</body>
+</html>

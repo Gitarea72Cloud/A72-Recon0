@@ -9,6 +9,7 @@ Schema (see /README.md for the full picture):
   COHORT#<intake>     META                    open_at, close_at, roster
 """
 import os
+from decimal import Decimal
 import boto3
 from boto3.dynamodb.conditions import Key
 
@@ -20,13 +21,44 @@ def table():
     return _dynamodb.Table(_TABLE_NAME)
 
 
+def _floats_to_decimal(value):
+    """DynamoDB's resource API rejects Python float outright -- Decimal only.
+
+    Scoring produces plain floats (percentages), so every write goes
+    through this rather than trusting each call site to remember.
+    """
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: _floats_to_decimal(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_floats_to_decimal(v) for v in value]
+    return value
+
+
+def _decimal_to_native(value):
+    """Inverse of _floats_to_decimal, applied on read so nothing above this
+    layer -- scoring, business logic, JSON responses -- ever has to deal
+    with Decimal (json.dumps() can't serialize it without a custom encoder).
+    """
+    if isinstance(value, Decimal):
+        as_int = int(value)
+        return as_int if as_int == value else float(value)
+    if isinstance(value, dict):
+        return {k: _decimal_to_native(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decimal_to_native(v) for v in value]
+    return value
+
+
 def get_item(pk: str, sk: str):
     resp = table().get_item(Key={"PK": pk, "SK": sk})
-    return resp.get("Item")
+    item = resp.get("Item")
+    return _decimal_to_native(item) if item is not None else None
 
 
 def put_item(item: dict):
-    table().put_item(Item=item)
+    table().put_item(Item=_floats_to_decimal(item))
     return item
 
 
@@ -34,17 +66,18 @@ def update_item(pk: str, sk: str, update_expr: str, expr_values: dict, expr_name
     kwargs = {
         "Key": {"PK": pk, "SK": sk},
         "UpdateExpression": update_expr,
-        "ExpressionAttributeValues": expr_values,
+        "ExpressionAttributeValues": _floats_to_decimal(expr_values),
         "ReturnValues": "ALL_NEW",
     }
     if expr_names:
         kwargs["ExpressionAttributeNames"] = expr_names
     resp = table().update_item(**kwargs)
-    return resp.get("Attributes")
+    attrs = resp.get("Attributes")
+    return _decimal_to_native(attrs) if attrs is not None else None
 
 
 def query_prefix(pk: str, sk_prefix: str):
     resp = table().query(
         KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(sk_prefix)
     )
-    return resp.get("Items", [])
+    return _decimal_to_native(resp.get("Items", []))

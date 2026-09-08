@@ -1,14 +1,14 @@
 """POST /session/start
 
-Creates a Stage 0 session for the calling student and returns the first item.
-Item selection here is intentionally simple (first item per domain, in a
-fixed order) — the real item bank / randomized variant pool is Phase 0
-content work, not infrastructure; swap this out once that exists.
+Creates a Stage 0 session for the calling student and returns the first item
+(plus its position in the stage, so the client can show "1 of 5" etc without
+knowing the item bank size itself).
 """
 import json
 import time
 import uuid
-from common import db, auth, scoring
+from common import db, auth
+from common import items as itembank
 
 HEADERS = {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
 
@@ -22,6 +22,17 @@ def lambda_handler(event, context):
     if not student:
         return response(401, {"error": "unauthorized"})
 
+    # Placement is one-shot per student: if a prior session already
+    # finalized, point back at it instead of allowing a fresh retake.
+    existing = db.query_prefix(f"STUDENT#{student}", "SESSION#")
+    done = next((s for s in existing if s.get("checkpoint") == "placement" and s.get("stage") == "done"), None)
+    if done:
+        return response(409, {
+            "error": "placement already completed",
+            "sessionId": done["SK"].replace("SESSION#", ""),
+            "track": done.get("track"),
+        })
+
     session_id = str(uuid.uuid4())
     session = {
         "PK": f"STUDENT#{student}",
@@ -33,19 +44,15 @@ def lambda_handler(event, context):
     }
     db.put_item(session)
 
-    first_items = []
-    for domain in scoring.DOMAINS:
-        if domain == "tooling_familiarity":
-            continue  # Stage A only
-        items = db.query_prefix(f"QUESTION#{domain}", "ITEM#")
-        if items:
-            first_items.append(items[0])
-
-    if not first_items:
+    item, index, total = itembank.next_item(session)
+    if not item:
         return response(200, {
             "sessionId": session_id,
             "item": None,
             "note": "No items loaded yet — seed the question bank (QUESTION#<domain> / ITEM#<qid>) first.",
         })
 
-    return response(200, {"sessionId": session_id, "item": first_items[0]})
+    return response(200, {
+        "sessionId": session_id, "item": itembank.public_item(item),
+        "itemIndex": index, "totalItems": total,
+    })

@@ -1,15 +1,20 @@
 """POST /session/{sessionId}/answer
 
-Records one answer, scores the current stage when it's complete, and applies
-the branching rule from common.scoring:
-  Stage 0  < 55%            -> finalize Basic
+Records one answer and returns either the next item in the current stage, or
+— once the stage is exhausted — the routing/finalization result:
+  Stage 0  < 55%               -> finalize Basic
   Stage 0  55-70% (borderline) -> Stage B (short tie-break)
-  Stage 0  >= 70%            -> Stage A (harder confirmation)
-  Stage A / Stage B completed -> ALWAYS finalize. No retries, no manual flag.
+  Stage 0  >= 70%               -> Stage A (harder confirmation)
+  Stage A / Stage B exhausted  -> ALWAYS finalize. No retries, no manual flag.
+
+Stage completion is decided server-side (whether itembank.next_item finds
+another item), not by a client-supplied flag — nothing to spoof or get wrong
+from the browser.
 """
 import json
 import time
 from common import db, auth, scoring
+from common import items as itembank
 
 HEADERS = {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
 
@@ -64,36 +69,52 @@ def lambda_handler(event, context):
     answers = session.get("answers", []) + [{
         "itemId": item_id, "domain": domain, "correct": correct, "stage": session["stage"],
     }]
+    session["answers"] = answers
     db.update_item(
         f"STUDENT#{student}", f"SESSION#{session_id}",
         "SET answers = :a", {":a": answers},
     )
 
-    # NOTE: "stage complete" detection (has this student seen every item for
-    # the current stage yet?) depends on the item bank size, which is Phase 0
-    # content work. This returns the running score after every answer so the
-    # caller (or a thin orchestration layer) can decide when a stage is done
-    # and call the relevant branch below.
     stage_answers = [a for a in answers if a["stage"] == session["stage"]]
     stage_scores = scoring.score_domain_answers(stage_answers)
     stage_pct = stage_scores.get("_overall", 0.0)
 
-    stage_complete = bool(body.get("stageComplete"))
-    if not stage_complete:
-        return response(200, {"stage": session["stage"], "running_score": stage_pct, "done": False})
+    next_item, index, total = itembank.next_item(session)
+    if next_item:
+        return response(200, {
+            "done": False, "stage": session["stage"], "running_score": stage_pct,
+            "item": itembank.public_item(next_item), "itemIndex": index, "totalItems": total,
+        })
 
+    # Current stage exhausted -- route to the next stage, or finalize.
     if session["stage"] == "stage0":
         route = scoring.route_after_stage0(stage_pct)
         if route == "basic":
             result = finalize(student, session_id, scoring.finalize_from_stage0_only(stage_pct), stage_scores)
             return response(200, {"done": True, "track": result["track"]})
+
         next_stage = "stageA" if route == "stageA" else "stageB"
         db.update_item(
             f"STUDENT#{student}", f"SESSION#{session_id}",
             "SET stage = :s, stage0_score = :sc",
             {":s": next_stage, ":sc": stage_pct},
         )
-        return response(200, {"done": False, "nextStage": next_stage})
+        session["stage"] = next_stage
+        nxt, idx, tot = itembank.next_item(session)
+        if nxt:
+            return response(200, {
+                "done": False, "nextStage": next_stage,
+                "item": itembank.public_item(nxt), "itemIndex": idx, "totalItems": tot,
+            })
+        # No Stage A/B content loaded yet (Phase 0 content work) -- finalize
+        # from Stage 0 alone rather than leaving the session stuck with
+        # nothing to serve. Remove once Stage A/B items exist.
+        track = scoring.ADVANCED if stage_pct >= scoring.STAGE0_HIGH_THRESHOLD else scoring.BASIC
+        result = finalize(student, session_id, track, stage_scores)
+        return response(200, {
+            "done": True, "track": result["track"],
+            "note": "finalized from Stage 0 only -- no Stage A/B items loaded yet",
+        })
 
     if session["stage"] == "stageB":
         track = scoring.finalize_after_stage_b(stage_pct)
