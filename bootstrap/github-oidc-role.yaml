@@ -97,6 +97,10 @@ Resources:
                 Resource:
                   - !Sub arn:aws:cloudformation:*:${AWS::AccountId}:stack/a72-recon0-*/*
                   - !Sub arn:aws:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*
+                  # Every SAM-templated deploy expands the AWS::Serverless
+                  # transform via CloudFormation; this is an AWS-owned
+                  # resource, not account-scoped, so it's listed separately.
+                  - "arn:aws:cloudformation:*:aws:transform/Serverless-2016-10-31"
               - Sid: SamDeploymentBucket
                 Effect: Allow
                 Action:
