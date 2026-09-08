@@ -41,6 +41,10 @@ jobs:
 
       - name: sam deploy
         run: |
+          PARAMS="Stage=dev"
+          if [ -n "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" ]; then
+            PARAMS="$PARAMS CloudFrontDistributionId=${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}"
+          fi
           sam deploy \
             --stack-name a72-recon0-dev \
             --region ${{ env.AWS_REGION }} \
@@ -48,7 +52,7 @@ jobs:
             --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides Stage=dev CloudFrontDistributionId=${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+            --parameter-overrides $PARAMS
 
       - name: Sync static frontend to S3
         run: |
