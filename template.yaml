@@ -11,6 +11,19 @@ Parameters:
     Default: dev
     AllowedValues: [dev, prod]
     Description: Deployment stage / environment name.
+  CloudFrontDistributionId:
+    Type: String
+    Default: ""
+    Description: >
+      ID of the CloudFront distribution fronting WebsiteBucket, created
+      OUTSIDE this stack (see DEPLOY.md — this account's CloudFront access
+      is gated behind AWS account verification, which as of writing blocks
+      CloudFormation/API distribution creation but not console creation).
+      Leave blank until that distribution exists; the bucket policy that
+      grants it read access is skipped until this is set.
+
+Conditions:
+  HasCloudFrontDistribution: !Not [!Equals [!Ref CloudFrontDistributionId, ""]]
 
 Globals:
   Function:
@@ -219,11 +232,17 @@ Resources:
             Method: GET
 
   # ---------------------------------------------------------------------
-  # Static site — private S3 origin behind CloudFront with Origin Access
-  # Control. Not a public S3 website bucket: this account has S3 Block
-  # Public Access enabled at the account level (org-wide guardrail), so a
-  # public bucket policy would be rejected outright, and OAC is the current
-  # AWS-recommended pattern anyway (also gets HTTPS/CDN for free).
+  # Static site — private S3 origin, meant to sit behind a CloudFront
+  # distribution with Origin Access Control. Not a public S3 website
+  # bucket: this account has S3 Block Public Access enabled at the account
+  # level, so a public bucket policy is rejected outright.
+  #
+  # The distribution itself is NOT created here: this account's CloudFront
+  # access is gated behind AWS account verification (a fraud-prevention
+  # check, unrelated to IAM) that as of writing blocks
+  # CloudFormation/API-driven distribution creation but not the console —
+  # see DEPLOY.md for the exact config to create it by hand once, then
+  # pass its ID back in via CloudFrontDistributionId.
   # ---------------------------------------------------------------------
   WebsiteBucket:
     Type: AWS::S3::Bucket
@@ -235,47 +254,9 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  WebsiteOriginAccessControl:
-    Type: AWS::CloudFront::OriginAccessControl
-    Properties:
-      OriginAccessControlConfig:
-        Name: !Sub a72-recon0-oac-${Stage}
-        OriginAccessControlOriginType: s3
-        SigningBehavior: always
-        SigningProtocol: sigv4
-
-  WebsiteDistribution:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      DistributionConfig:
-        Enabled: true
-        DefaultRootObject: index.html
-        HttpVersion: http2
-        PriceClass: PriceClass_100
-        Origins:
-          - Id: S3Origin
-            DomainName: !GetAtt WebsiteBucket.RegionalDomainName
-            OriginAccessControlId: !GetAtt WebsiteOriginAccessControl.Id
-            S3OriginConfig:
-              OriginAccessIdentity: ""
-        DefaultCacheBehavior:
-          TargetOriginId: S3Origin
-          ViewerProtocolPolicy: redirect-to-https
-          AllowedMethods: [GET, HEAD]
-          CachedMethods: [GET, HEAD]
-          # AWS managed "CachingOptimized" policy
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
-        CustomErrorResponses:
-          # SPA fallback: unknown paths (client-side routes) serve index.html
-          - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-          - ErrorCode: 404
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-
   WebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
+    Condition: HasCloudFrontDistribution
     Properties:
       Bucket: !Ref WebsiteBucket
       PolicyDocument:
@@ -288,7 +269,7 @@ Resources:
             Resource: !Sub arn:aws:s3:::${WebsiteBucket}/*
             Condition:
               StringEquals:
-                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebsiteDistribution}
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}
 
 Outputs:
   ApiUrl:
@@ -300,9 +281,5 @@ Outputs:
     Value: !Ref UserPoolClient
   WebsiteBucketName:
     Value: !Ref WebsiteBucket
-  WebsiteDistributionId:
-    Value: !Ref WebsiteDistribution
-  WebsiteUrl:
-    Value: !Sub https://${WebsiteDistribution.DomainName}
   TableName:
     Value: !Ref DataTable

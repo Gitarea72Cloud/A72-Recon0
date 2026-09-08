@@ -48,7 +48,7 @@ jobs:
             --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides Stage=dev
+            --parameter-overrides Stage=dev CloudFrontDistributionId=${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
 
       - name: Sync static frontend to S3
         run: |
@@ -59,14 +59,16 @@ jobs:
             --output text)
           aws s3 sync frontend/ "s3://${BUCKET}" --delete
 
+      # CloudFrontDistributionId is created by hand once (see DEPLOY.md) and
+      # set as a repo variable — this account's CloudFront access is gated
+      # behind AWS account verification, which blocks CloudFormation/API
+      # distribution creation but not console creation.
       - name: Invalidate CloudFront cache
+        if: vars.CLOUDFRONT_DISTRIBUTION_ID != ''
         run: |
-          DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
-            --stack-name a72-recon0-dev \
-            --region ${{ env.AWS_REGION }} \
-            --query "Stacks[0].Outputs[?OutputKey=='WebsiteDistributionId'].OutputValue" \
-            --output text)
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
 
       - name: Print deployed URLs
         run: |
