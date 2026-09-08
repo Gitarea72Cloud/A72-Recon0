@@ -105,12 +105,18 @@ Resources:
                 Effect: Allow
                 Action:
                   - s3:CreateBucket
+                  - s3:DeleteBucket
                   - s3:PutBucketPolicy
+                  - s3:PutBucketTagging
+                  - s3:TagResource
                   - s3:GetObject
                   - s3:PutObject
+                  - s3:DeleteObject
                   - s3:ListBucket
                   - s3:PutBucketWebsite
                   - s3:PutBucketPublicAccessBlock
+                  - s3:PutBucketVersioning
+                  - s3:PutEncryptionConfiguration
                 Resource:
                   - "arn:aws:s3:::aws-sam-cli-managed-default*"
                   - "arn:aws:s3:::a72-recon0-web-*"
