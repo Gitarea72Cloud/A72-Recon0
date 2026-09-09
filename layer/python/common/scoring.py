@@ -26,6 +26,20 @@ DOMAINS = [
 BASIC = "Basic"
 ADVANCED = "Advanced"
 
+HINT_PENALTY = 0.33  # each hint used costs 33% of that item's credit
+
+
+def credit_for(correct: bool, hints_used: int) -> float:
+    """A correct answer is worth less credit the more hints it took.
+
+    0 hints -> 1.0, 1 -> 0.67, 2 -> 0.34, 3+ -> ~0. A wrong answer is
+    always 0 regardless of hints -- hints reduce credit, they don't
+    create it.
+    """
+    if not correct:
+        return 0.0
+    return round(max(0.0, 1.0 - HINT_PENALTY * hints_used), 2)
+
 
 def route_after_stage0(stage0_pct: float) -> str:
     """Returns 'basic' | 'stageA' | 'stageB' given the Stage 0 percentage score."""
@@ -59,10 +73,16 @@ def finalize_after_stage_a(stage0_pct: float, stage_a_pct: float,
 
 
 def score_domain_answers(answers: list[dict]) -> dict:
-    """answers: [{domain, correct: bool}, ...] -> {domain: pct, ..., "_overall": pct}"""
-    by_domain: dict[str, list[bool]] = {}
+    """answers: [{domain, credit: float 0..1}, ...] -> {domain: pct, ..., "_overall": pct}
+
+    `credit` (see credit_for above) already folds in the hint penalty;
+    falls back to the plain correct/incorrect boolean for any answer
+    recorded before hints existed.
+    """
+    by_domain: dict[str, list[float]] = {}
     for a in answers:
-        by_domain.setdefault(a["domain"], []).append(bool(a.get("correct")))
+        credit = a["credit"] if "credit" in a else (1.0 if a.get("correct") else 0.0)
+        by_domain.setdefault(a["domain"], []).append(credit)
 
     scores = {
         domain: round(100 * sum(vals) / len(vals), 1)

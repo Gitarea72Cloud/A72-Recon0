@@ -207,6 +207,24 @@ Resources:
             Path: /session/{sessionId}/answer
             Method: POST
 
+  GetHintFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/get_hint/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /session/{sessionId}/hint
+            Method: POST
+
   GetResultFunction:
     Type: AWS::Serverless::Function
     Properties:

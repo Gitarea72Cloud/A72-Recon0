@@ -34,15 +34,18 @@ def next_item(session: dict) -> tuple[dict | None, int, int]:
 
 
 def public_item(item: dict) -> dict:
-    """Strip answer_key/scenario before an item ever reaches the client.
+    """Strip answer_key/scenario/hint text before an item ever reaches the
+    client -- only hintCount (how many hints exist) goes out up front, so
+    the client can render unlock buttons without seeing their content.
 
     The terminal's virtual filesystem (scenario.files) is re-derived
-    server-side by terminal-exec from domain+itemId on first command, so
-    the client never needs it sent over the wire either.
+    server-side by terminal-exec/powershell-exec from domain+itemId on
+    first command, so the client never needs it sent over the wire either.
     """
     return {
         "itemId": item["SK"].replace("ITEM#", ""),
         "domain": item["PK"].replace("QUESTION#", ""),
         "prompt": item.get("prompt"),
         "type": item.get("type"),
+        "hintCount": len(item.get("hints", [])),
     }

@@ -40,13 +40,19 @@
     <section>
       <h2>The rules</h2>
       <ul class="plain">
-        <li>The test is <strong>30 questions</strong> — 15 about the Linux command line, then 15 about PowerShell. It takes most students 30–40 minutes.</li>
+        <li>The test is <strong>20 questions</strong> — 10 about the Linux command line, then 10 about PowerShell. It takes most students 20–30 minutes.</li>
         <li>Every question uses a small simulated terminal — run whatever commands you like, then type your answer in the box beside it.</li>
         <li>Once you submit an answer, you can't go back and change it.</li>
-        <li>This isn't graded pass/fail on individual questions — it's a placement tool. There's no benefit to guessing, and no penalty for taking your time.</li>
+        <li>Stuck? Each question has up to 3 hints on the right, unlocked one at a time. Hint 1 nudges you in the right direction, hint 2 names the command, hint 3 gives you almost the whole thing. <strong>Each hint you use reduces that question's credit by about a third</strong> — using all 3 leaves it worth close to nothing, so they're a real trade-off, not free help.</li>
+        <li>There's a running timer so you know how long you've spent — there's no time limit, it's just there for your own awareness.</li>
         <li>Once the test finishes, your result is final. There are no retries and no manual override.</li>
-        <li>Every command you type is logged, but nothing about how you got the answer affects your result — only the answer itself.</li>
+        <li>Every command you type is logged, but nothing about how you got the answer affects your result beyond the hints you chose to use.</li>
       </ul>
+    </section>
+
+    <section>
+      <h2>A note on looking things up</h2>
+      <p>You won't find the exact command for every test question spelled out on this page — that's on purpose. In the real job, you won't have every command memorized either; knowing <em>how to find the right syntax quickly</em> (docs, <code class="inline">man</code> pages, <code class="inline">Get-Help</code>, a search engine) is itself part of the skill being placed. The reference below covers what each command/cmdlet <em>does</em> in general — most questions still take some figuring out.</p>
     </section>
 
     <section>
@@ -56,44 +62,44 @@
 
     <section>
       <h2>Command reference — Linux</h2>
-      <p class="muted">Everything the Linux terminal understands. Standard bash syntax — pipes (<code class="inline">|</code>) work between any of these.</p>
+      <p class="muted">Everything the Linux terminal understands. Standard bash syntax — pipes (<code class="inline">|</code>) chain any of these together, feeding one command's output into the next.</p>
       <div class="tblwrap">
         <table class="cmdtable">
-          <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+          <thead><tr><th>Command</th><th>Syntax</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td class="mono">pwd</td><td>Print the current directory.</td></tr>
-            <tr><td class="mono">ls</td><td>List files. Add <code class="inline">-l</code> for a long listing (permissions, size, date), <code class="inline">-la</code> to include <code class="inline">.</code> and <code class="inline">..</code>.</td></tr>
-            <tr><td class="mono">cat &lt;file&gt;</td><td>Print a file's contents.</td></tr>
-            <tr><td class="mono">stat / wc / du &lt;file&gt;</td><td>Report a file's size in bytes.</td></tr>
-            <tr><td class="mono">file &lt;file&gt;</td><td>Report what kind of content a file holds.</td></tr>
-            <tr><td class="mono">echo "text"</td><td>Print text back out — useful piped into other commands.</td></tr>
-            <tr><td class="mono">base64 -d</td><td>Decode Base64 input. Use with a pipe, e.g. <code class="inline">cat secret.b64 | base64 -d</code>.</td></tr>
-            <tr><td class="mono">base64 -e</td><td>Encode input to Base64.</td></tr>
+            <tr><td class="mono">pwd</td><td class="mono">pwd</td><td>Print the current working directory.</td></tr>
+            <tr><td class="mono">ls</td><td class="mono">ls [-l] [-la]</td><td>List files in the current directory. Bare <code class="inline">ls</code> just prints names; <code class="inline">-l</code> adds a long listing — permissions, owner, size, date; <code class="inline">-la</code> also includes the hidden <code class="inline">.</code> and <code class="inline">..</code> entries.</td></tr>
+            <tr><td class="mono">cat</td><td class="mono">cat &lt;file&gt;</td><td>Print a file's raw contents to the terminal.</td></tr>
+            <tr><td class="mono">stat / wc / du</td><td class="mono">stat &lt;file&gt;<br>wc &lt;file&gt;<br>du &lt;file&gt;</td><td>Three different real-world tools that all end up reporting a file's size in bytes here — <code class="inline">stat</code> shows file metadata, <code class="inline">wc</code> counts (bytes/lines/words depending on flags), <code class="inline">du</code> reports disk usage.</td></tr>
+            <tr><td class="mono">file</td><td class="mono">file &lt;file&gt;</td><td>Identify what kind of content a file actually holds, regardless of its name or extension — useful when a filename might be misleading.</td></tr>
+            <tr><td class="mono">echo</td><td class="mono">echo "text"</td><td>Print text back out. On its own it's not very useful; piped into another command it becomes that command's input.</td></tr>
+            <tr><td class="mono">base64</td><td class="mono">base64 -d<br>base64 -e</td><td><code class="inline">-d</code> decodes Base64 input back to plain text; <code class="inline">-e</code> encodes plain text to Base64. Always used with a pipe feeding it input, e.g. reading a file then decoding what's inside it.</td></tr>
           </tbody>
         </table>
       </div>
+      <p class="muted" style="margin-top:10px;font-size:13px">Type <code class="inline">help</code> in the terminal itself for a quick reminder of this same list.</p>
     </section>
 
     <section>
       <h2>Command reference — PowerShell</h2>
-      <p class="muted">Everything the PowerShell terminal understands. Common aliases work too (<code class="inline">ls</code>/<code class="inline">dir</code> for <code class="inline">Get-ChildItem</code>, <code class="inline">cat</code>/<code class="inline">type</code> for <code class="inline">Get-Content</code>) — pipes (<code class="inline">|</code>) work between any of these.</p>
+      <p class="muted">Everything the PowerShell terminal understands. Common short aliases work too (<code class="inline">ls</code>/<code class="inline">dir</code> for <code class="inline">Get-ChildItem</code>, <code class="inline">cat</code>/<code class="inline">type</code> for <code class="inline">Get-Content</code>, <code class="inline">gci</code>, <code class="inline">gi</code>, <code class="inline">gc</code>) — pipes (<code class="inline">|</code>) chain any of these together.</p>
       <div class="tblwrap">
         <table class="cmdtable">
-          <thead><tr><th>Cmdlet</th><th>What it does</th></tr></thead>
+          <thead><tr><th>Cmdlet</th><th>Syntax</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td class="mono">Get-Location</td><td>Print the current directory.</td></tr>
-            <tr><td class="mono">Get-ChildItem</td><td>List files with details (name, size, date). Add <code class="inline">-Name</code> for names only.</td></tr>
-            <tr><td class="mono">Get-Item &lt;file&gt;</td><td>Show one file's details, including its <code class="inline">Length</code>.</td></tr>
-            <tr><td class="mono">Get-Content &lt;file&gt;</td><td>Print a file's contents.</td></tr>
-            <tr><td class="mono">Measure-Object -Character</td><td>Count characters in piped input, e.g. <code class="inline">Get-Content file.txt | Measure-Object -Character</code>.</td></tr>
-            <tr><td class="mono">Get-FileHash &lt;file&gt;</td><td>Compute a hash. Defaults to SHA256; add <code class="inline">-Algorithm MD5</code> for MD5.</td></tr>
-            <tr><td class="mono">ConvertFrom-Base64String</td><td>Decode Base64 input, e.g. <code class="inline">Get-Content secret.b64 | ConvertFrom-Base64String</code>.</td></tr>
-            <tr><td class="mono">ConvertTo-Base64String</td><td>Encode input to Base64.</td></tr>
-            <tr><td class="mono">Write-Output "text"</td><td>Print text back out — useful piped into other cmdlets.</td></tr>
+            <tr><td class="mono">Get-Location</td><td class="mono">Get-Location</td><td>Print the current working directory.</td></tr>
+            <tr><td class="mono">Get-ChildItem</td><td class="mono">Get-ChildItem [-Name]</td><td>List what's in the current directory. Bare, it shows a table (mode, date, size, name); <code class="inline">-Name</code> lists just the names.</td></tr>
+            <tr><td class="mono">Get-Item</td><td class="mono">Get-Item &lt;file&gt;</td><td>Show one specific file's metadata as a single row — including its <code class="inline">Length</code> (size in bytes).</td></tr>
+            <tr><td class="mono">Get-Content</td><td class="mono">Get-Content &lt;file&gt;</td><td>Print a file's raw contents.</td></tr>
+            <tr><td class="mono">Measure-Object</td><td class="mono">... | Measure-Object -Character</td><td>Measures piped-in text. With <code class="inline">-Character</code>, reports how many characters it received — the PowerShell equivalent of a byte/character count.</td></tr>
+            <tr><td class="mono">Get-FileHash</td><td class="mono">Get-FileHash &lt;file&gt; [-Algorithm SHA256|MD5]</td><td>Computes a cryptographic hash of a file's contents. Defaults to SHA256 if you don't specify <code class="inline">-Algorithm</code>.</td></tr>
+            <tr><td class="mono">ConvertFrom-Base64String</td><td class="mono">... | ConvertFrom-Base64String</td><td>Decodes piped-in Base64 text back to plain text.</td></tr>
+            <tr><td class="mono">ConvertTo-Base64String</td><td class="mono">... | ConvertTo-Base64String</td><td>Encodes piped-in plain text to Base64.</td></tr>
+            <tr><td class="mono">Write-Output</td><td class="mono">Write-Output "text"</td><td>Prints text back out — the PowerShell equivalent of <code class="inline">echo</code>, most useful piped into another cmdlet.</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="muted" style="margin-top:10px;font-size:13px">Two of these — <code class="inline">ConvertFrom-Base64String</code> and <code class="inline">ConvertTo-Base64String</code> — are simplified for this sandbox; real PowerShell does Base64 conversion via <code class="inline">[Convert]</code> .NET methods rather than a dedicated cmdlet.</p>
+      <p class="muted" style="margin-top:10px;font-size:13px">Type <code class="inline">help</code> in the terminal for a quick reminder. Two of these — <code class="inline">ConvertFrom-Base64String</code> and <code class="inline">ConvertTo-Base64String</code> — are simplified for this sandbox; real-world PowerShell does Base64 conversion via <code class="inline">[Convert]</code> .NET methods rather than a dedicated cmdlet, and <code class="inline">(Get-Content file).Length</code> works here too if you'd rather use that form.</p>
     </section>
 
     <section>

@@ -111,6 +111,22 @@ def run_single(raw: str, files: dict, stdin: str | None):
 
 
 def run(raw: str, files: dict):
+    raw = raw.strip()
+
+    # Support the common (Expression).Property idiom -- e.g.
+    # (Get-Content file.txt).Length -- rather than erroring on the
+    # literal token "(Get-Content". This sandbox has no real object
+    # model, so .Length/.Count just resolve against the expression's
+    # text output; that's a deliberate simplification, same tradeoff as
+    # ConvertFrom/ConvertTo-Base64String below.
+    prop = None
+    if raw.startswith("(") and ")" in raw:
+        close = raw.rfind(")")
+        rest = raw[close + 1:].strip()
+        if rest.startswith("."):
+            prop = rest[1:].strip()
+            raw = raw[1:close]
+
     parts = [p.strip() for p in raw.split("|") if p.strip()]
     if not parts:
         return {"out": ""}
@@ -119,6 +135,27 @@ def run(raw: str, files: dict):
     for part in parts:
         result = run_single(part, files, stdin)
         stdin = result.get("stdout", result.get("out", ""))
+
+    if prop:
+        # Get-Item/Get-Content's formatted table text isn't the same thing
+        # as the file's actual size -- resolve Length/Count against the
+        # real file data directly rather than measuring the display string.
+        last_tokens = parts[-1].split()
+        last_name = last_tokens[0] if last_tokens else ""
+        last_fname = next((t for t in last_tokens[1:] if t in files), None)
+        propl = prop.lower()
+        if propl == "length":
+            if last_name in ("Get-Item", "gi", "Get-Content", "cat", "type", "gc") and last_fname:
+                return {"out": str(len(files[last_fname]["content"]))}
+            value = result.get("stdout", result.get("out", ""))
+            return {"out": str(len(value))}
+        if propl == "count":
+            if last_name in ("Get-ChildItem", "gci", "dir", "ls"):
+                return {"out": str(len(files))}
+            value = result.get("stdout", result.get("out", ""))
+            return {"out": str(len(value.splitlines()) or 1)}
+        return {"out": f"Property '{prop}' isn't available in this sandbox.", "err": True}
+
     return result
 
 

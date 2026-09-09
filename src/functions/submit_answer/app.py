@@ -66,8 +66,15 @@ def lambda_handler(event, context):
     question = db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}")
     correct = bool(question) and canonical(submitted) == canonical(str(question.get("answer_key", "")))
 
+    # Hints used is read from server-recorded state (set by get_hint), never
+    # from the request -- the client can't just claim it used none.
+    term_state = db.get_item(f"STUDENT#{student}", f"TERMSTATE#{item_id}")
+    hints_used = (term_state or {}).get("hints_unlocked", 0)
+    credit = scoring.credit_for(correct, hints_used)
+
     answers = session.get("answers", []) + [{
-        "itemId": item_id, "domain": domain, "correct": correct, "stage": session["stage"],
+        "itemId": item_id, "domain": domain, "correct": correct,
+        "hintsUsed": hints_used, "credit": credit, "stage": session["stage"],
     }]
     session["answers"] = answers
     db.update_item(
@@ -83,6 +90,7 @@ def lambda_handler(event, context):
     if next_item:
         return response(200, {
             "done": False, "stage": session["stage"], "running_score": stage_pct,
+            "lastAnswerCredit": credit, "lastAnswerHintsUsed": hints_used,
             "item": itembank.public_item(next_item), "itemIndex": index, "totalItems": total,
         })
 

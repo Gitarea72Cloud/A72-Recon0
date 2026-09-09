@@ -6,18 +6,28 @@
 <title>Test — A72-Recon0</title>
 <link rel="stylesheet" href="theme.css">
 <style>
-  .testwrap { max-width: 720px; margin: 0 auto; padding: 44px 24px 100px; }
+  .testwrap { max-width: 1040px; margin: 0 auto; padding: 32px 24px 100px; }
 
   /* ---- begin screen ---- */
   .begin { text-align: center; padding: 40px 0; }
   .begin h1 { font-size: 26px; margin-bottom: 10px; }
   .begin p { color: var(--muted); max-width: 46ch; margin: 0 auto 26px; }
 
-  /* ---- progress ---- */
-  .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  /* ---- top row: progress + timer ---- */
+  .test-topbar { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+  .progress-row { display: flex; align-items: center; gap: 12px; flex: 1; }
   .progress-row .label { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
   .progress-track { flex: 1; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+  .test-timer {
+    font-family: ui-monospace, monospace; font-size: 13px; color: var(--muted);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 10px; white-space: nowrap;
+  }
+
+  /* ---- main layout: question column + hints sidebar ---- */
+  .test-layout { display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: start; }
+  @media (max-width: 760px) { .test-layout { grid-template-columns: 1fr; } }
 
   .prompt-card { margin-bottom: 20px; }
   .prompt-card h2 { font-size: 17px; margin: 0; }
@@ -26,22 +36,58 @@
   .term-panel {
     background: var(--code-bg); border-radius: 12px; overflow: hidden;
     border: 1px solid var(--line); box-shadow: var(--shadow);
-    display: flex; flex-direction: column; height: 300px; margin-bottom: 20px;
+    display: flex; flex-direction: column; height: 320px; margin-bottom: 20px;
   }
+  .term-panel.shell-powershell { background: #012456; border-color: #01173a; }
   .term-titlebar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.07); flex: 0 0 auto; }
+  .term-panel.shell-powershell .term-titlebar { background: rgba(255,255,255,.06); border-bottom-color: rgba(255,255,255,.12); }
   .term-dot { width: 9px; height: 9px; border-radius: 50%; opacity: .85; }
   .term-dot.r { background: #ff5f56; } .term-dot.y { background: #ffbd2e; } .term-dot.g { background: #27c93f; }
   .term-name { margin-left: 6px; font-family: ui-monospace, monospace; font-size: 11px; color: #8296ac; }
+  .term-panel.shell-powershell .term-name { color: #b9c9f0; }
   .term-screen { flex: 1; overflow-y: auto; padding: 12px 14px; font-family: ui-monospace, monospace; font-size: 12.8px; color: var(--code-ink); line-height: 1.65; }
+  .term-panel.shell-powershell .term-screen { color: #eef2ff; }
   .term-line { white-space: pre-wrap; word-break: break-word; }
   .term-line.term-cmd { color: #7fe3d4; }
+  .term-panel.shell-powershell .term-line.term-cmd { color: #ffe066; }
   .term-line.term-err { color: #ff8a8a; }
+  .term-line.term-banner { color: #8296ac; }
+  .term-panel.shell-powershell .term-line.term-banner { color: #b9c9f0; }
   .term-inputrow { display: flex; align-items: center; gap: 8px; padding: 8px 14px 11px; flex: 0 0 auto; }
-  .term-ps1 { color: #6fd68a; font-size: 12.5px; white-space: nowrap; font-family: ui-monospace, monospace; }
+  .term-ps1 { font-size: 12.5px; white-space: nowrap; font-family: ui-monospace, monospace; }
   .term-input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--code-ink); font-size: 12.8px; font-family: ui-monospace, monospace; }
+  .term-panel.shell-powershell .term-input { color: #eef2ff; }
 
   .answer-row { display: flex; gap: 10px; }
   .answer-row input { flex: 1; }
+  .answer-note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  /* ---- hints sidebar ---- */
+  .hints-panel { position: sticky; top: 90px; }
+  .hints-panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  .hint-btn {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; font-size: 13.5px; font-weight: 600; color: var(--ink);
+    cursor: pointer; font-family: inherit;
+  }
+  .hint-btn:hover:not(:disabled) { border-color: var(--accent); }
+  .hint-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .hint-btn .cost { font-size: 11px; font-weight: 600; color: var(--danger); }
+  .hint-text {
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; font-size: 13.5px; line-height: 1.5;
+  }
+  .hint-text .n { color: var(--accent); font-weight: 700; margin-right: 4px; }
+
+  /* ---- away-message toast ---- */
+  .away-toast {
+    position: fixed; bottom: 24px; right: 24px; max-width: 320px;
+    background: var(--ink); color: var(--bg); border-radius: 10px; padding: 14px 16px;
+    font-size: 14px; box-shadow: var(--shadow); z-index: 50;
+    animation: away-in .25s ease-out;
+  }
+  @keyframes away-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
   /* ---- result ---- */
   .result { text-align: center; padding: 40px 0; }
@@ -77,21 +123,80 @@
 (function () {
   const app = document.getElementById("app");
   let sessionId = null;
-  let currentItem = null; // {itemId, domain, prompt, type}
+  let testActive = false;
+  let timerStart = null;
+  let timerInterval = null;
+  let hintsUnlocked = 0;
 
   const SHELL_CONFIG = {
-    linux_cli: { endpoint: "terminal", promptText: "student@placement:~$", title: "student@placement — bash" },
-    windows_cli: { endpoint: "powershell", promptText: "PS C:\\Users\\student>", title: "student@placement — PowerShell" },
+    linux_cli: {
+      endpoint: "terminal", css: "",
+      promptHtml: '<span style="color:#6fd68a">student@a72-recon0</span><span style="color:#8296ac">:</span><span style="color:#7fb3ff">~</span><span style="color:#8296ac">$</span>',
+      promptText: "student@a72-recon0:~$",
+      title: "student@a72-recon0 — bash",
+      banner: () => `Last login: ${new Date().toString().replace(/ GMT.*/, "")} from 10.0.2.15`,
+    },
+    windows_cli: {
+      endpoint: "powershell", css: "shell-powershell",
+      promptHtml: '<span style="color:#ffe066">PS</span> <span style="color:#eef2ff">C:\\Users\\student&gt;</span>',
+      promptText: "PS C:\\Users\\student>",
+      title: "Windows PowerShell",
+      banner: () => "Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.",
+    },
   };
   function shellFor(item) {
     return SHELL_CONFIG[item.domain] || SHELL_CONFIG.linux_cli;
   }
 
+  // Rotates through varied messages so it doesn't feel like the same
+  // canned line every time; never repeats the last one shown back to back.
+  const AWAY_MESSAGES = [
+    "Welcome back \u{1F440} we know you were off consulting the ancient scrolls (Stack Overflow).",
+    "Oh look, you're back! Find what you were looking for out there? \u{1F608}",
+    "No judgment here \u{1F92D} everyone Googles the flags sometimes.",
+    "Tab-switching detected. We'll allow it \u{1F60F} this time.",
+    "Back so soon? Must've been a good search result.",
+    "We see you \u{1F441}\uFE0F There's no shame in a quick lookup \u2014 just own it.",
+  ];
+  let lastAwayIdx = -1;
+  function showAwayToast() {
+    let idx = Math.floor(Math.random() * AWAY_MESSAGES.length);
+    if (idx === lastAwayIdx) idx = (idx + 1) % AWAY_MESSAGES.length;
+    lastAwayIdx = idx;
+    const toast = document.createElement("div");
+    toast.className = "away-toast";
+    toast.textContent = AWAY_MESSAGES[idx];
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && testActive) showAwayToast();
+  });
+
+  function startTimer() {
+    timerStart = Date.now();
+    clearInterval(timerInterval);
+    timerInterval = setInterval(updateTimerDisplay, 1000);
+  }
+  function stopTimer() {
+    clearInterval(timerInterval);
+    testActive = false;
+  }
+  function updateTimerDisplay() {
+    const el = document.getElementById("testTimer");
+    if (!el) return;
+    const secs = Math.floor((Date.now() - timerStart) / 1000);
+    const m = String(Math.floor(secs / 60)).padStart(2, "0");
+    const s = String(secs % 60).padStart(2, "0");
+    el.textContent = m + ":" + s;
+  }
+
   function renderBegin() {
+    testActive = false;
     app.innerHTML =
       '<div class="begin">' +
       '<h1>Ready when you are</h1>' +
-      '<p>30 questions in a simulated terminal — 15 Linux, 15 PowerShell. Takes most people 30–40 minutes. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
+      '<p>20 questions in a simulated terminal — 10 Linux, 10 PowerShell. Hints are available if you get stuck, but they cost credit. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
       '<button class="btn btn-primary" id="beginBtn">Begin the test</button>' +
       "</div>";
     document.getElementById("beginBtn").addEventListener("click", begin);
@@ -114,7 +219,7 @@
         return;
       }
       sessionId = res.sessionId;
-      currentItem = res.item;
+      startTimer();
       renderQuestion(res.item, res.itemIndex, res.totalItems);
     } catch (err) {
       if (err.status === 409 && err.body && err.body.sessionId) {
@@ -133,33 +238,98 @@
     screen.scrollTop = screen.scrollHeight;
   }
 
+  function renderHintButtons(item) {
+    hintsUnlocked = 0;
+    const count = item.hintCount || 0;
+    if (count === 0) {
+      return '<p class="muted" style="font-size:13px">No hints for this one.</p>';
+    }
+    let html = '<div id="hintButtons">';
+    for (let i = 1; i <= count; i++) {
+      const cost = Math.round(Math.min(1, i * 0.33) * 100);
+      html += `<button class="hint-btn" data-level="${i}" ${i === 1 ? "" : "disabled"}>
+        <span>Hint ${i}</span><span class="cost">-${cost}%</span>
+      </button>`;
+    }
+    html += '</div><div id="hintTexts"></div><div id="hintError"></div>';
+    return html;
+  }
+
+  function wireHintButtons(item) {
+    const buttons = document.querySelectorAll("#hintButtons .hint-btn");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const level = Number(btn.dataset.level);
+        btn.disabled = true;
+        const errEl = document.getElementById("hintError");
+        errEl.innerHTML = "";
+        try {
+          const res = await A72.apiFetch("/session/" + sessionId + "/hint", {
+            method: "POST",
+            body: JSON.stringify({ itemId: item.itemId, domain: item.domain, level }),
+          });
+          hintsUnlocked = res.hintsUnlocked;
+          const textsEl = document.getElementById("hintTexts");
+          const div = document.createElement("div");
+          div.className = "hint-text";
+          div.innerHTML = '<span class="n">' + level + ".</span>" + res.hint;
+          textsEl.appendChild(div);
+          btn.textContent = "";
+          btn.remove();
+          const next = document.querySelector('#hintButtons .hint-btn[data-level="' + (level + 1) + '"]');
+          if (next) next.disabled = false;
+        } catch (err) {
+          errEl.innerHTML = '<p class="muted" style="font-size:12.5px">' + err.message + "</p>";
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
   function renderQuestion(item, index, total) {
-    currentItem = item;
+    testActive = true;
+    hintsUnlocked = 0;
     const shell = shellFor(item);
     const pct = Math.round(((index - 1) / total) * 100);
     app.innerHTML =
-      '<div class="progress-row">' +
-        '<span class="label">Question ' + index + ' of ' + total + '</span>' +
-        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
-      '</div>' +
-      '<div class="card prompt-card"><h2>' + item.prompt + '</h2></div>' +
-      '<div class="term-panel">' +
-        '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">' + shell.title + '</span></div>' +
-        '<div class="term-screen" id="termScreen"></div>' +
-        '<div class="term-inputrow">' +
-          '<span class="term-ps1">' + shell.promptText + '</span>' +
-          '<input id="termInput" class="term-input" autocomplete="off" spellcheck="false" aria-label="Terminal command">' +
+      '<div class="test-topbar">' +
+        '<div class="progress-row">' +
+          '<span class="label">Question ' + index + ' of ' + total + '</span>' +
+          '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
         '</div>' +
+        '<div class="test-timer" id="testTimer">00:00</div>' +
       '</div>' +
-      '<div id="answerError"></div>' +
-      '<div class="answer-row">' +
-        '<input id="answerInput" class="field" style="background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:11px 13px;border-radius:8px;font-size:15px" placeholder="Type your answer" autocomplete="off">' +
-        '<button class="btn btn-primary" id="submitAnswerBtn">Submit</button>' +
+      '<div class="test-layout">' +
+        '<div class="test-main">' +
+          '<div class="card prompt-card"><h2>' + item.prompt + '</h2></div>' +
+          '<div class="term-panel ' + shell.css + '">' +
+            '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">' + shell.title + '</span></div>' +
+            '<div class="term-screen" id="termScreen"></div>' +
+            '<div class="term-inputrow">' +
+              '<span class="term-ps1">' + shell.promptHtml + '</span>' +
+              '<input id="termInput" class="term-input" autocomplete="off" spellcheck="false" aria-label="Terminal command">' +
+            '</div>' +
+          '</div>' +
+          '<div id="answerError"></div>' +
+          '<div class="answer-row">' +
+            '<input id="answerInput" class="field" style="background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:11px 13px;border-radius:8px;font-size:15px" placeholder="Type your answer" autocomplete="off">' +
+            '<button class="btn btn-primary" id="submitAnswerBtn">Submit</button>' +
+          '</div>' +
+          '<p class="answer-note">Once you submit, you can\'t go back and change it.</p>' +
+        '</div>' +
+        '<div class="hints-panel">' +
+          '<h3>Need a hand?</h3>' +
+          renderHintButtons(item) +
+        '</div>' +
       '</div>';
+
+    updateTimerDisplay();
+    wireHintButtons(item);
 
     const screen = document.getElementById("termScreen");
     const termInput = document.getElementById("termInput");
-    appendLine(screen, "Type a command to explore, then submit your answer below.");
+    shell.banner().split("\n").forEach((line) => appendLine(screen, line, "term-banner"));
+    appendLine(screen, "");
 
     termInput.addEventListener("keydown", async (e) => {
       if (e.key !== "Enter" || !termInput.value.trim()) return;
@@ -197,6 +367,7 @@
           body: JSON.stringify({ itemId: item.itemId, domain: item.domain, answer }),
         });
         if (res.done) {
+          stopTimer();
           showResult(sessionId, res.track);
         } else if (res.item) {
           renderQuestion(res.item, res.itemIndex, res.totalItems);
@@ -215,6 +386,7 @@
   }
 
   async function showResult(sid, track) {
+    testActive = false;
     app.innerHTML = '<div class="result"><p class="muted">Finishing up…</p></div>';
     let result = { track, domain_scores: null, composite_score: null };
     try {
