@@ -31,7 +31,6 @@ def lambda_handler(event, context):
         return response(409, {
             "error": "placement already completed",
             "sessionId": done["SK"].replace("SESSION#", ""),
-            "track": done.get("track"),
         })
 
     # A refresh or re-navigation to the test page shouldn't restart from

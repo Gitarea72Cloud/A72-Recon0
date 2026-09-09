@@ -59,10 +59,12 @@ def run_single(raw: str, files: dict, stdin: str | None):
             return {"out": f"cat: {args[0] if args else ''}: No such file or directory", "err": True}
         return {"out": files[fname]["content"], "stdout": files[fname]["content"]}
     if name in ("stat", "wc", "du"):
-        if not fname:
-            return {"out": f"{name}: missing file operand", "err": True}
-        size = len(files[fname]["content"])
-        return {"out": f"{size} {fname}" if name == "wc" else str(size)}
+        if fname:
+            size = len(files[fname]["content"])
+            return {"out": f"{size} {fname}" if name == "wc" else str(size)}
+        if stdin is not None:
+            return {"out": str(len(stdin))}
+        return {"out": f"{name}: missing file operand", "err": True}
     if name == "file":
         if not fname:
             return {"out": "file: missing file operand", "err": True}

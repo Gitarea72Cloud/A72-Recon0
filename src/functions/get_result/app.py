@@ -1,4 +1,11 @@
-"""GET /session/{sessionId}/result"""
+"""GET /session/{sessionId}/result
+
+Confirms completion only -- track/composite_score/domain_scores are
+instructor-facing information (see /admin/students/{id}), not shown to
+the student. Deliberately doesn't return the RESULT#<sessionId> item's
+contents here even though it exists; a student asking for their own
+result only gets to know that the test is done.
+"""
 import json
 from common import db, auth
 
@@ -21,5 +28,4 @@ def lambda_handler(event, context):
     if session.get("stage") != "done":
         return response(202, {"done": False, "stage": session.get("stage")})
 
-    result = db.get_item(f"RESULT#{session_id}", "SUMMARY")
-    return response(200, result or {"done": True, "track": session.get("track")})
+    return response(200, {"done": True})

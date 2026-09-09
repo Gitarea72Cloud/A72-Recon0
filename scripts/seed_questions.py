@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
-"""Seed the Stage 0 item bank — 10 Linux CLI items + 10 PowerShell items.
+"""Seed the Stage 0 item bank.
+
+  10 Linux CLI items      (type: terminal, domain: linux_cli)
+  10 PowerShell items     (type: terminal, domain: windows_cli)
+   5 Red Team concepts    (type: free-text, domain: red_team)
+   5 Blue Team concepts   (type: free-text, domain: blue_team)
+   5 Grey Team/ethics     (type: free-text, domain: grey_team)
 
 This is NOT the real item bank — that's Phase 0 content work with the
-Module 1 professors (~30-40 items). It's enough to give real variety
-without making the test too long.
+Module 1 professors. Each item carries 3 progressive hints (nudge ->
+names the command/concept -> near-complete answer), unlocked on demand
+via get_hint and never sent to the client up front. Using a hint costs
+credit on that item (see common/scoring.py's credit_for).
 
-Each item carries 3 progressive hints (nudge -> names the command ->
-near-complete command), unlocked on demand via GET_HINT and never sent to
-the client up front — see common/items.py's public_item and
-src/functions/get_hint. Using a hint costs the student credit on that
-item (see common/scoring.py's credit_for), so hints are a real trade-off,
-not free information.
+Terminal items use only commands the interpreters actually implement:
+  Linux (terminal_exec):     cd, pwd, ls (-l/-la), cat, stat/wc/du
+                              (file arg OR piped stdin), file, echo,
+                              base64 (-d/-e), with pipes.
+  PowerShell (powershell_exec): Get-ChildItem/gci/dir/ls, Get-Item,
+                              Get-Content/cat/type/gc, Get-Location,
+                              Set-Location, Measure-Object -Character,
+                              ConvertFrom/ConvertTo-Base64String,
+                              Get-FileHash [-Algorithm SHA256|MD5],
+                              Write-Output, pipes, and the
+                              (Expression).Length/.Count idiom.
 
-Linux items use only commands terminal_exec implements: cd, pwd, ls
-(-l/-la), cat, stat/wc/du, file, echo, base64 (-d/-e), with pipes.
-
-PowerShell items use only cmdlets powershell_exec implements:
-Get-ChildItem/gci/dir/ls, Get-Item, Get-Content/cat/type/gc,
-Get-Location/pwd, Set-Location/cd, Measure-Object -Character,
-ConvertFrom-Base64String, ConvertTo-Base64String, Get-FileHash
-[-Algorithm SHA256|MD5], Write-Output/echo, with pipes, plus the
-(Expression).Length / .Count idiom.
+Free-text items have no scenario/terminal at all -- short, unambiguous
+canonical answers (a term or acronym), graded the same way as everything
+else (case/whitespace-insensitive exact match).
 
 Usage:
     python3 scripts/seed_questions.py --table a72-recon0-dev --region eu-south-2
@@ -31,8 +38,10 @@ import hashlib
 import boto3
 
 
-def b64(s: str) -> str:
-    return base64.b64encode(s.encode()).decode()
+def b64(s) -> str:
+    if isinstance(s, str):
+        s = s.encode()
+    return base64.b64encode(s).decode()
 
 
 def sha256(s: str) -> str:
@@ -52,32 +61,38 @@ def main():
     dynamodb = boto3.resource("dynamodb", region_name=args.region)
     table = dynamodb.Table(args.table)
 
+    # ------------------------------------------------------------------
+    # Linux CLI (10) -- varied task shapes, not "decode another file"
+    # repeated ten times: comparison, misleading extensions, counting,
+    # permissions reasoning, decode+extract-a-field, pick-the-real-one,
+    # decoy filenames, and a chained multi-stage pipe.
+    # ------------------------------------------------------------------
     secret_phrase = "you just automated your first placement task"
     secret_b64 = b64(secret_phrase)
-    flag_phrase = "the flag is base64 all the way down"
-    flag_b64 = b64(flag_phrase)
-    readme_content = "Placement test sandbox. Nothing here is a real filesystem."
-    vault_phrase = "you found the hidden note under the doormat"
-    vault_b64 = b64(vault_phrase)
+
+    access_log = "GET /index.html 200\nGET /login.html 200\nPOST /login 302\n" * 3
+    small_note = "Reminder: rotate the API keys."
+
+    config_phrase_raw = "host=10.0.0.5;port=2222;user=root"
+    config_b64 = b64(config_phrase_raw)
+
+    decoy_a = "Just a plain english sentence, definitely not encoded."
+    decoy_c = "Another decoy sentence sitting here in this file."
+    real_candidate_phrase = "the third file was the real one all along"
+    real_candidate_b64 = b64(real_candidate_phrase)
+
+    report_v1 = "Draft — pricing numbers not final yet."
+    report_v2 = "Final approved report — Q3 pricing confirmed at $42 per seat."
+
+    secret2_phrase = "measuring a decoded pipe is just another command away"
+    secret2_b64 = b64(secret2_phrase)
+
+    invoice_phrase = "this invoice is not really a pdf, it is base64 text"
+    invoice_b64 = b64(invoice_phrase)
 
     linux_items = [
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-001",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "What is the size, in bytes, of secret.b64?",
-            "answer_key": str(len(secret_b64)),
-            "hints": [
-                "Think about which commands report a file's size rather than its contents.",
-                "Try `stat`, `wc`, or `du` on the file.",
-                "Run `stat secret.b64` (or `wc secret.b64` / `du secret.b64`) and read the number it prints.",
-            ],
-            "scenario": {"files": {
-                "notes.txt": {"content": "Reminder: rotate the API keys before Friday.", "perms": "-rw-r--r--", "date": "Oct 20 09:14"},
-                "secret.b64": {"content": secret_b64, "perms": "-rw-r--r--", "date": "Oct 20 09:15"},
-            }},
-        },
-        {
-            "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-002",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
             "prompt": "secret.b64 is Base64-encoded. What does it say?",
             "answer_key": secret_phrase,
@@ -89,148 +104,167 @@ def main():
             "scenario": {"files": {"secret.b64": {"content": secret_b64, "perms": "-rw-r--r--", "date": "Oct 20 09:15"}}},
         },
         {
-            "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-003",
+            "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-002",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "Two files are here. Which one does `file` report as Base64-encoded?",
-            "answer_key": "payload.b64",
+            "prompt": "Two files are here: access.log and notes.txt. Which one is larger, in bytes?",
+            "answer_key": "access.log" if len(access_log) > len(small_note) else "notes.txt",
             "hints": [
-                "There's a command that identifies what kind of content a file holds.",
-                "Try running `file` on each of the two files.",
-                "Run `file payload.b64` and `file report.txt` and compare the two outputs.",
+                "You'll need to check both files' sizes and compare them.",
+                "`stat`, `wc`, or `du` each report a file's size.",
+                "Run `stat access.log` and `stat notes.txt`, then compare the two numbers.",
             ],
             "scenario": {"files": {
-                "report.txt": {"content": "Quarterly access review — no findings.", "perms": "-rw-r--r--", "date": "Oct 19 14:02"},
-                "payload.b64": {"content": flag_b64, "perms": "-rw-r--r--", "date": "Oct 19 14:03"},
+                "access.log": {"content": access_log, "perms": "-rw-r--r--", "date": "Sep 08 08:00"},
+                "notes.txt": {"content": small_note, "perms": "-rw-r--r--", "date": "Sep 08 08:00"},
+            }},
+        },
+        {
+            "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-003",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "Which file does `file` report as Base64-encoded, even though its name suggests otherwise?",
+            "answer_key": "photo.jpg",
+            "hints": [
+                "Don't trust a filename's extension — check what the content actually is.",
+                "There's a command that identifies content type regardless of filename.",
+                "Run `file photo.jpg` and `file readme.txt` and compare the outputs.",
+            ],
+            "scenario": {"files": {
+                "photo.jpg": {"content": secret_b64, "perms": "-rw-r--r--", "date": "Sep 08 08:30"},
+                "readme.txt": {"content": "Nothing special in here.", "perms": "-rw-r--r--", "date": "Sep 08 08:31"},
             }},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-004",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "How many bytes is readme.txt?",
-            "answer_key": str(len(readme_content)),
+            "prompt": "How many total entries does `ls -la` show in this directory (including . and ..)?",
+            "answer_key": "5",
             "hints": [
-                "Same idea as any file-size question — one command reports it directly.",
-                "`stat`, `wc`, or `du` all report a file's size.",
-                "Run `stat readme.txt` and read the number.",
+                "There's a flag combination that also shows the hidden . and .. entries.",
+                "Try `ls -la` instead of a plain `ls`.",
+                "Run `ls -la` and count every line, including the two that start with a dot.",
             ],
-            "scenario": {"files": {"readme.txt": {"content": readme_content, "perms": "-rw-r--r--", "date": "Oct 18 10:30"}}},
+            "scenario": {"files": {
+                "app.log": {"content": "ok", "perms": "-rw-r--r--", "date": "Sep 01 08:00"},
+                "config.yml": {"content": "env: staging", "perms": "-rw-r--r--", "date": "Sep 01 08:00"},
+                "notes.md": {"content": "# TODO", "perms": "-rw-r--r--", "date": "Sep 01 08:01"},
+            }},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-005",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "payload.b64 is Base64-encoded. What's the flag inside it?",
-            "answer_key": flag_phrase,
+            "prompt": "Three files are here with different permissions. Which one is NOT readable by other users (no read bit in the last group)?",
+            "answer_key": "internal.txt",
             "hints": [
-                "Reverse the encoding on this file the same way you would any Base64 file.",
-                "Pipe the file's contents into the Base64 decoder.",
-                "Run `cat payload.b64 | base64 -d`.",
+                "You need the long-form listing to see permission bits.",
+                "The permissions string has three groups: owner, group, others. Look at the last three characters.",
+                "Run `ls -l` — internal.txt's permissions end in `---`, meaning others have no access at all.",
             ],
-            "scenario": {"files": {"payload.b64": {"content": flag_b64, "perms": "-rw-r--r--", "date": "Oct 19 14:03"}}},
+            "scenario": {"files": {
+                "public.txt": {"content": "anyone can read this", "perms": "-rw-r--r--", "date": "Sep 08 09:00"},
+                "shared.txt": {"content": "team can read this", "perms": "-rw-rw-rw-", "date": "Sep 08 09:00"},
+                "internal.txt": {"content": "owner only", "perms": "-rw-r-----", "date": "Sep 08 09:00"},
+            }},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-006",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "How many files are in this directory?",
-            "answer_key": "3",
+            "prompt": "config.b64 is Base64-encoded and contains connection settings. What port number does it specify?",
+            "answer_key": "2222",
             "hints": [
-                "There's a command that lists what's in the current directory.",
-                "Try `ls` with no arguments.",
-                "Run `ls` and count the names it prints.",
+                "Decode the file first, then read the specific value you need out of it.",
+                "Pipe the file's contents into the Base64 decoder, then look for `port=`.",
+                "Run `cat config.b64 | base64 -d` and read the port value from the decoded text.",
             ],
-            "scenario": {"files": {
-                "app.log": {"content": "server started ok", "perms": "-rw-r--r--", "date": "Sep 01 08:00"},
-                "config.yml": {"content": "env: staging", "perms": "-rw-r--r--", "date": "Sep 01 08:00"},
-                "notes.md": {"content": "# TODO\n- rotate creds", "perms": "-rw-r--r--", "date": "Sep 01 08:01"},
-            }},
+            "scenario": {"files": {"config.b64": {"content": config_b64, "perms": "-rw-r--r--", "date": "Sep 08 09:30"}}},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-007",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "What permissions does `ls -l` show for deploy_key.pem?",
-            "answer_key": "-r--------",
+            "prompt": "Exactly one of these three files is actually valid Base64. Decode each one — which one works, and what does it say?",
+            "answer_key": real_candidate_phrase,
             "hints": [
-                "You need the long-form listing, not the plain one.",
-                "Add the `-l` flag to `ls`.",
-                "Run `ls -l` and read the permissions field (leftmost column) for deploy_key.pem.",
+                "Try decoding all three — most will fail or produce garbage, only one gives real text.",
+                "Use `base64 -d` on each candidate file in turn.",
+                "Run `cat candidate_a.txt | base64 -d`, then candidate_b and candidate_c — only one produces a readable sentence.",
             ],
-            "scenario": {"files": {"deploy_key.pem": {
-                "content": "-----BEGIN PRIVATE KEY-----\nMOCKKEYDATA\n-----END PRIVATE KEY-----",
-                "perms": "-r--------", "date": "Aug 30 11:12",
-            }}},
+            "scenario": {"files": {
+                "candidate_a.txt": {"content": decoy_a, "perms": "-rw-r--r--", "date": "Sep 08 10:00"},
+                "candidate_b.b64": {"content": real_candidate_b64, "perms": "-rw-r--r--", "date": "Sep 08 10:00"},
+                "candidate_c.log": {"content": decoy_c, "perms": "-rw-r--r--", "date": "Sep 08 10:01"},
+            }},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-008",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "According to incident.log, what's the ticket number?",
-            "answer_key": "INC-4471",
+            "prompt": "There are two similarly-named report files. Read report_final_v2.txt (the current one, not the draft) — how many bytes is it?",
+            "answer_key": str(len(report_v2)),
             "hints": [
-                "Read the file and look for something formatted like an ID.",
-                "Use `cat` to print incident.log's contents.",
-                "Run `cat incident.log` — the ticket number appears after `ticket=`.",
+                "Two files look almost identical by name — make sure you check the right one.",
+                "`stat`, `wc`, or `du` report a file's size; run it against the v2 file specifically.",
+                "Run `stat report_final_v2.txt` (not report_final.txt) and read the number.",
             ],
-            "scenario": {"files": {"incident.log": {
-                "content": "2026-09-01 03:14 ALERT ticket=INC-4471 status=open",
-                "perms": "-rw-r--r--", "date": "Sep 01 03:14",
-            }}},
+            "scenario": {"files": {
+                "report_final.txt": {"content": report_v1, "perms": "-rw-r--r--", "date": "Sep 08 10:10"},
+                "report_final_v2.txt": {"content": report_v2, "perms": "-rw-r--r--", "date": "Sep 08 10:20"},
+            }},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-009",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "Three files are here. Which one does `file` report as Base64-encoded?",
-            "answer_key": "keys.b64",
+            "prompt": "Decode secret2.b64, then tell me how many characters the decoded message contains.",
+            "answer_key": str(len(secret2_phrase)),
             "hints": [
-                "One command tells you what type of content a file actually holds.",
-                "Run `file` on each of the three files.",
-                "Run `file keys.b64`, `file manifest.txt`, and `file readme2.txt` and compare.",
+                "This one takes two steps chained together: decode, then measure.",
+                "`base64 -d` decodes; `wc` can measure whatever's piped into it, not just a named file.",
+                "Run `cat secret2.b64 | base64 -d | wc` and read the resulting number.",
             ],
-            "scenario": {"files": {
-                "manifest.txt": {"content": "v1.4.0 release manifest", "perms": "-rw-r--r--", "date": "Sep 02 09:00"},
-                "keys.b64": {"content": vault_b64, "perms": "-rw-r--r--", "date": "Sep 02 09:01"},
-                "readme2.txt": {"content": "See manifest.txt for details.", "perms": "-rw-r--r--", "date": "Sep 02 09:02"},
-            }},
+            "scenario": {"files": {"secret2.b64": {"content": secret2_b64, "perms": "-rw-r--r--", "date": "Sep 08 10:30"}}},
         },
         {
             "PK": "QUESTION#linux_cli", "SK": "ITEM#linux-010",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "vault.b64 is Base64-encoded. What's inside it?",
-            "answer_key": vault_phrase,
+            "prompt": "invoice.pdf isn't really a PDF — it's Base64 text with a misleading name. Decode it. What does it say?",
+            "answer_key": invoice_phrase,
             "hints": [
-                "Same decoding approach as the other .b64 files here.",
-                "Pipe its contents into the Base64 decoder.",
-                "Run `cat vault.b64 | base64 -d`.",
+                "Ignore the .pdf extension — check what `file` actually reports, then decode accordingly.",
+                "Once you know it's text, `base64 -d` reverses the encoding.",
+                "Run `cat invoice.pdf | base64 -d` and read the result.",
             ],
-            "scenario": {"files": {"vault.b64": {"content": vault_b64, "perms": "-rw-r--r--", "date": "Sep 02 09:01"}}},
+            "scenario": {"files": {"invoice.pdf": {"content": invoice_b64, "perms": "-rw-r--r--", "date": "Sep 08 10:40"}}},
         },
     ]
 
-    ps_readme = "PowerShell placement sandbox. Nothing here is a real filesystem."
+    # ------------------------------------------------------------------
+    # PowerShell (10) -- same variety principle: comparison, integrity
+    # verification via hashing, decoy/misleading names, decode+extract,
+    # pick-the-real-one, and a chained pipe.
+    # ------------------------------------------------------------------
     ps_secret_phrase = "welcome to the powershell placement track"
     ps_secret_b64 = b64(ps_secret_phrase)
-    ps_report = "Q3 executive summary draft — confidential, do not distribute externally."
-    ps_payload_phrase = "root access confirmed on host web01"
-    ps_payload_b64 = b64(ps_payload_phrase)
-    ps_service_log = "2026-09-08 SERVICE health=ok failed_logins=7 uptime_days=42"
-    ps_integrity = "Build artifact checksum verification passed for release 4.2.1."
-    ps_installer_log = "Setup completed with 0 errors and 2 warnings."
-    ps_encode_target = "admin-reset"
-    ps_encode_result = b64(ps_encode_target)
-    ps_changelog = "v2.3.0 — added SSO login, fixed session timeout bug, improved audit logging."
+
+    ps_report_a = "Short memo."
+    ps_report_b = "This is a considerably longer status report with more detail in it."
+
+    ps_backup_1 = "Backup snapshot A — checksum baseline."
+    ps_backup_2 = "Backup snapshot A — checksum baseline!"  # one character different, on purpose
+
+    ps_config_raw = "env=production;region=eu-south-2;replicas=4"
+    ps_config_b64 = b64(ps_config_raw)
+
+    ps_decoy_a = "This file just holds a short unencoded status line."
+    ps_decoy_c = "Another plain status update, nothing encoded here."
+    ps_real_phrase = "candidate two was the one that actually decoded"
+    ps_real_b64 = b64(ps_real_phrase)
+
+    ps_scan_txt = "Scan queued for host 10.0.0.9, priority normal."
+    ps_scan_exe = "AppInstaller v4 — not really, this is text disguised as an installer."
+
+    ps_secret2_phrase = "chaining cmdlets together is the whole point of the pipe"
+    ps_secret2_b64 = b64(ps_secret2_phrase)
 
     windows_items = [
         {
             "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-001",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "How many characters are in readme.txt?",
-            "answer_key": str(len(ps_readme)),
-            "hints": [
-                "There's a cmdlet that measures things like character/word/line counts.",
-                "Pipe the file's contents into `Measure-Object`.",
-                "Run `Get-Content readme.txt | Measure-Object -Character` and read the Characters value.",
-            ],
-            "scenario": {"files": {"readme.txt": {"content": ps_readme, "date": "Sep 08 09:00"}}},
-        },
-        {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-002",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
             "prompt": "secret.b64 is Base64-encoded. Decode it — what does it say?",
             "answer_key": ps_secret_phrase,
@@ -242,7 +276,116 @@ def main():
             "scenario": {"files": {"secret.b64": {"content": ps_secret_b64, "date": "Sep 08 09:05"}}},
         },
         {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-002",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "report_a.txt and report_b.txt are here. Which one has the greater Length?",
+            "answer_key": "report_b.txt" if len(ps_report_b) > len(ps_report_a) else "report_a.txt",
+            "hints": [
+                "There's a cmdlet that reports one file's metadata, including its size.",
+                "Try `Get-Item` on each file and compare the Length column.",
+                "Run `Get-Item report_a.txt` and `Get-Item report_b.txt`, then compare the two Length values.",
+            ],
+            "scenario": {"files": {
+                "report_a.txt": {"content": ps_report_a, "date": "Sep 08 10:00"},
+                "report_b.txt": {"content": ps_report_b, "date": "Sep 08 10:00"},
+            }},
+        },
+        {
             "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-003",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "backup_1.txt and backup_2.txt are both supposed to be identical copies. Using Get-FileHash, are they actually identical? Answer yes or no.",
+            "answer_key": "no" if ps_backup_1 != ps_backup_2 else "yes",
+            "hints": [
+                "Don't just eyeball the content — verify it properly.",
+                "There's a cmdlet for computing a cryptographic hash of a file's contents.",
+                "Run `Get-FileHash backup_1.txt` and `Get-FileHash backup_2.txt` — compare the Hash values, not just the text.",
+            ],
+            "scenario": {"files": {
+                "backup_1.txt": {"content": ps_backup_1, "date": "Sep 08 10:10"},
+                "backup_2.txt": {"content": ps_backup_2, "date": "Sep 08 10:10"},
+            }},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-004",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "config.b64 is Base64-encoded and holds deployment settings. How many replicas does it specify?",
+            "answer_key": "4",
+            "hints": [
+                "Decode the file first, then read out the specific value you need.",
+                "Pipe the file's contents into the Base64-decoding cmdlet, then look for `replicas=`.",
+                "Run `Get-Content config.b64 | ConvertFrom-Base64String` and read the replicas value.",
+            ],
+            "scenario": {"files": {"config.b64": {"content": ps_config_b64, "date": "Sep 08 10:20"}}},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-005",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "Exactly one of these three files is actually valid Base64. Decode each one — which works, and what does it say?",
+            "answer_key": ps_real_phrase,
+            "hints": [
+                "Try decoding all three — most will fail or produce garbage, only one gives real text.",
+                "Pipe each candidate's contents into the Base64-decoding cmdlet.",
+                "Run `Get-Content candidate_a.txt | ConvertFrom-Base64String`, then b and c — only one gives a readable sentence.",
+            ],
+            "scenario": {"files": {
+                "candidate_a.txt": {"content": ps_decoy_a, "date": "Sep 08 10:30"},
+                "candidate_b.b64": {"content": ps_real_b64, "date": "Sep 08 10:30"},
+                "candidate_c.log": {"content": ps_decoy_c, "date": "Sep 08 10:31"},
+            }},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-006",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "installer_v4.exe isn't really an executable — it's plain text with a misleading name. Read it. What does it say?",
+            "answer_key": ps_scan_exe,
+            "hints": [
+                "Ignore the .exe extension — this sandbox has no real executables, only text and Base64.",
+                "There's a cmdlet that just prints a file's raw contents.",
+                "Run `Get-Content installer_v4.exe` and read the output.",
+            ],
+            "scenario": {"files": {
+                "installer_v4.exe": {"content": ps_scan_exe, "date": "Sep 08 10:40"},
+                "scan_notes.txt": {"content": ps_scan_txt, "date": "Sep 08 10:41"},
+            }},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-007",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "Decode secret2.b64, then tell me how many characters the decoded message contains.",
+            "answer_key": str(len(ps_secret2_phrase)),
+            "hints": [
+                "This one chains two steps: decode, then measure.",
+                "Pipe the decoded output into `Measure-Object -Character`.",
+                "Run `Get-Content secret2.b64 | ConvertFrom-Base64String | Measure-Object -Character`.",
+            ],
+            "scenario": {"files": {"secret2.b64": {"content": ps_secret2_b64, "date": "Sep 08 10:50"}}},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-008",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": "Using Get-FileHash -Algorithm MD5 vs the default algorithm on the same file, which hash is longer: the SHA256 hex string or the MD5 hex string?",
+            "answer_key": "sha256",
+            "hints": [
+                "You don't need a file for this one — think about what each algorithm actually produces.",
+                "SHA256 produces a 256-bit digest, MD5 a 128-bit digest — in hex, that's twice the characters for one of them.",
+                "SHA256 in hex is 64 characters; MD5 in hex is 32 characters. SHA256 is the longer one.",
+            ],
+            "scenario": {"files": {"integrity.txt": {"content": "Any file works for this one.", "date": "Sep 08 11:00"}}},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-009",
+            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
+            "prompt": 'Encode the text "unlock-me" to Base64 using this terminal. What do you get?',
+            "answer_key": b64("unlock-me"),
+            "hints": [
+                "There's a cmdlet in this sandbox that does the opposite of decoding.",
+                "Try `ConvertTo-Base64String`.",
+                'Run `Write-Output "unlock-me" | ConvertTo-Base64String`.',
+            ],
+            "scenario": {"files": {}},
+        },
+        {
+            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-010",
             "checkpoint": "placement", "stage": "stage0", "type": "terminal",
             "prompt": "How many files are in this directory?",
             "answer_key": "3",
@@ -257,96 +400,125 @@ def main():
                 "inventory.csv": {"content": "id,host\n1,web01\n2,web02", "date": "Sep 08 07:02"},
             }},
         },
+    ]
+
+    # ------------------------------------------------------------------
+    # Security concepts (5 + 5 + 5) -- free-text, no terminal. Short,
+    # unambiguous canonical answers so simple exact-match grading works.
+    # ------------------------------------------------------------------
+    red_team_items = [
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-004",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "What Length does Get-Item report for report.docx?",
-            "answer_key": str(len(ps_report)),
-            "hints": [
-                "There's a cmdlet that reports a single file's metadata, including its size.",
-                "Try `Get-Item` on report.docx.",
-                "Run `Get-Item report.docx` and read the Length column.",
-            ],
-            "scenario": {"files": {
-                "report.docx": {"content": ps_report, "date": "Sep 08 10:00"},
-                "summary.txt": {"content": "See report.docx for the full write-up.", "date": "Sep 08 10:01"},
-            }},
+            "PK": "QUESTION#red_team", "SK": "ITEM#red-001",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for gathering information about a target using public sources (social media, public records, etc.) without directly touching their systems?",
+            "answer_key": "OSINT",
+            "hints": ["It's an acronym.", "It stands for a kind of intelligence gathered from openly available sources.", "OSINT = Open Source Intelligence."],
         },
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-005",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "payload.b64 is Base64-encoded. What does it say?",
-            "answer_key": ps_payload_phrase,
-            "hints": [
-                "Same decoding approach as any other Base64 file here.",
-                "Pipe its contents into the Base64-decoding cmdlet.",
-                "Run `Get-Content payload.b64 | ConvertFrom-Base64String`.",
-            ],
-            "scenario": {"files": {"payload.b64": {"content": ps_payload_b64, "date": "Sep 08 10:10"}}},
+            "PK": "QUESTION#red_team", "SK": "ITEM#red-002",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for an email-based social engineering attack that tries to trick someone into revealing credentials or clicking a malicious link?",
+            "answer_key": "phishing",
+            "hints": ["It's named after a real-world activity involving bait.", "It's the most common initial-access technique in real attacks.", "The answer is \"phishing\"."],
         },
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-006",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "According to service.log, how many failed logins are recorded?",
-            "answer_key": "7",
-            "hints": [
-                "Read the file's contents and look for a labeled value.",
-                "Use `Get-Content` to print service.log.",
-                "Run `Get-Content service.log` — look for `failed_logins=`.",
-            ],
-            "scenario": {"files": {"service.log": {"content": ps_service_log, "date": "Sep 08 11:00"}}},
+            "PK": "QUESTION#red_team", "SK": "ITEM#red-003",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What do we call a vulnerability that's exploited before the vendor has released a fix for it?",
+            "answer_key": "zero-day",
+            "hints": ["Think about how much warning the vendor had.", "The term describes having had zero days to prepare a patch.", "The answer is \"zero-day\"."],
         },
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-007",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "What's the SHA256 hash of integrity.txt (Get-FileHash)?",
-            "answer_key": sha256(ps_integrity),
-            "hints": [
-                "There's a cmdlet for computing cryptographic hashes of a file.",
-                "Try `Get-FileHash` on integrity.txt.",
-                "Run `Get-FileHash integrity.txt` (SHA256 is the default) and read the Hash value.",
-            ],
-            "scenario": {"files": {"integrity.txt": {"content": ps_integrity, "date": "Sep 08 11:30"}}},
+            "PK": "QUESTION#red_team", "SK": "ITEM#red-004",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "In a penetration test, what's the common term for the document that authorizes and defines the boundaries of what testers are allowed to do?",
+            "answer_key": "rules of engagement",
+            "hints": ["It's a formal agreement signed before testing starts.", "Military-derived terminology is often used here.", "The answer is \"rules of engagement\"."],
         },
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-008",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "Using Get-FileHash -Algorithm MD5, what's the MD5 hash of installer.log?",
-            "answer_key": md5(ps_installer_log),
-            "hints": [
-                "Same hashing cmdlet as before, just a different algorithm.",
-                "`Get-FileHash` takes an `-Algorithm` parameter.",
-                "Run `Get-FileHash installer.log -Algorithm MD5`.",
-            ],
-            "scenario": {"files": {"installer.log": {"content": ps_installer_log, "date": "Sep 08 11:45"}}},
+            "PK": "QUESTION#red_team", "SK": "ITEM#red-005",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for moving from one compromised system to others within the same network to expand access?",
+            "answer_key": "lateral movement",
+            "hints": ["Think about the direction of movement once inside a network.", "It's not about escalating privilege, it's about spreading sideways.", "The answer is \"lateral movement\"."],
+        },
+    ]
+    blue_team_items = [
+        {
+            "PK": "QUESTION#blue_team", "SK": "ITEM#blue-001",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the acronym for a centralized system that collects and correlates security logs from across an organization?",
+            "answer_key": "SIEM",
+            "hints": ["It's an acronym ending in \"Management\".", "It stands for Security Information and Event Management.", "The answer is \"SIEM\"."],
         },
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-009",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": f'Encode the text "{ps_encode_target}" to Base64 using this terminal. What do you get?',
-            "answer_key": ps_encode_result,
-            "hints": [
-                "There's a cmdlet in this sandbox that does the opposite of decoding.",
-                "Try `ConvertTo-Base64String`.",
-                f'Run `Write-Output "{ps_encode_target}" | ConvertTo-Base64String`.',
-            ],
-            "scenario": {"files": {"hint.txt": {"content": "Encoding cmdlets live in this sandbox's help.", "date": "Sep 08 12:00"}}},
+            "PK": "QUESTION#blue_team", "SK": "ITEM#blue-002",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the general term for a system that monitors network traffic and can alert on suspicious activity?",
+            "answer_key": "IDS",
+            "hints": ["It's an acronym.", "It stands for a system that detects intrusions.", "The answer is \"IDS\" (Intrusion Detection System)."],
         },
         {
-            "PK": "QUESTION#windows_cli", "SK": "ITEM#windows-010",
-            "checkpoint": "placement", "stage": "stage0", "type": "terminal",
-            "prompt": "According to changelog.txt, what version was released?",
-            "answer_key": "v2.3.0",
-            "hints": [
-                "Read the file and look for a version-looking string.",
-                "Use `Get-Content` to print changelog.txt.",
-                "Run `Get-Content changelog.txt` — the version appears right at the start.",
-            ],
-            "scenario": {"files": {"changelog.txt": {"content": ps_changelog, "date": "Sep 08 12:15"}}},
+            "PK": "QUESTION#blue_team", "SK": "ITEM#blue-003",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for a step-by-step document defining exactly how to respond to a specific type of security incident?",
+            "answer_key": "playbook",
+            "hints": ["Think of a sports-team analogy for a pre-planned set of moves.", "Incident response teams often keep one for each incident type.", "The answer is \"playbook\"."],
+        },
+        {
+            "PK": "QUESTION#blue_team", "SK": "ITEM#blue-004",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for proactively searching a network for threats that have evaded existing security tools, rather than waiting for an alert?",
+            "answer_key": "threat hunting",
+            "hints": ["It's a proactive activity, not a reactive one.", "The name literally describes going out and looking for the threat.", "The answer is \"threat hunting\"."],
+        },
+        {
+            "PK": "QUESTION#blue_team", "SK": "ITEM#blue-005",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for the process of restoring systems and normal operations after a security incident?",
+            "answer_key": "recovery",
+            "hints": ["It's one of the standard phases of incident response.", "It comes after containment and eradication.", "The answer is \"recovery\"."],
+        },
+    ]
+    grey_team_items = [
+        {
+            "PK": "QUESTION#grey_team", "SK": "ITEM#grey-001",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for a hacker who finds vulnerabilities without authorization but reports them instead of exploiting them maliciously?",
+            "answer_key": "grey hat",
+            "hints": ["It's a color-based term, sitting between two more extreme labels.", "It's neither fully \"white hat\" nor \"black hat\".", "The answer is \"grey hat\"."],
+        },
+        {
+            "PK": "QUESTION#grey_team", "SK": "ITEM#grey-002",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for a structured program where organizations pay researchers for responsibly reported vulnerabilities?",
+            "answer_key": "bug bounty",
+            "hints": ["Companies like Google and Meta run these publicly.", "It's named after a reward for finding something specific.", "The answer is \"bug bounty\"."],
+        },
+        {
+            "PK": "QUESTION#grey_team", "SK": "ITEM#grey-003",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for privately telling a vendor about a vulnerability and giving them time to fix it before publishing details?",
+            "answer_key": "responsible disclosure",
+            "hints": ["It's the opposite of publishing an exploit immediately.", "It's considered the ethical way to report a finding.", "The answer is \"responsible disclosure\"."],
+        },
+        {
+            "PK": "QUESTION#grey_team", "SK": "ITEM#grey-004",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "Under most computer-crime laws, what's the single most important factor deciding whether accessing a system is legal or illegal?",
+            "answer_key": "authorization",
+            "hints": ["It's not about skill or intent, it's about permission.", "Having explicit permission (or not) from the system's owner is what matters.", "The answer is \"authorization\"."],
+        },
+        {
+            "PK": "QUESTION#grey_team", "SK": "ITEM#grey-005",
+            "checkpoint": "placement", "stage": "stage0", "type": "free-text",
+            "prompt": "What's the term for tools that can be used for both legitimate security testing and malicious attacks, depending on who's using them?",
+            "answer_key": "dual-use",
+            "hints": ["Think about tools like Nmap or Metasploit and who uses them.", "The term describes having two possible uses, good or bad.", "The answer is \"dual-use\"."],
         },
     ]
 
-    all_items = linux_items + windows_items
+    all_items = linux_items + windows_items + red_team_items + blue_team_items + grey_team_items
     for item in all_items:
         table.put_item(Item=item)
         print(f"seeded {item['PK']} / {item['SK']}")

@@ -148,8 +148,10 @@
     return SHELL_CONFIG[item.domain] || SHELL_CONFIG.linux_cli;
   }
 
-  // Rotates through varied messages so it doesn't feel like the same
-  // canned line every time; never repeats the last one shown back to back.
+  // Blocking modals for the tab-switch and inactivity nudges -- must be
+  // closed by the student, never auto-dismissed. Same playful-but-
+  // respectful tone either way, just two different message pools since
+  // they're triggered by different things. Never affects scoring.
   const AWAY_MESSAGES = [
     "Welcome back \u{1F440} we know you were off consulting the ancient scrolls (Stack Overflow).",
     "Oh look, you're back! Find what you were looking for out there? \u{1F608}",
@@ -158,28 +160,109 @@
     "Back so soon? Must've been a good search result.",
     "We see you \u{1F441}\uFE0F There's no shame in a quick lookup \u2014 just own it.",
   ];
-  let lastAwayIdx = -1;
-  function showAwayToast() {
-    let idx = Math.floor(Math.random() * AWAY_MESSAGES.length);
-    if (idx === lastAwayIdx) idx = (idx + 1) % AWAY_MESSAGES.length;
-    lastAwayIdx = idx;
-    const toast = document.createElement("div");
-    toast.className = "away-toast";
-    toast.textContent = AWAY_MESSAGES[idx];
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 5000);
+  const INACTIVITY_MESSAGES = [
+    "Ups \u2014 sounds like somebody knocked on the door, or you were chatting on another device... oh, I'm so jealous \u{1F60F}",
+    "No commands for a while there \u2014 hope everything's okay over on your OTHER screen \u{1F609}",
+    "It's been quiet... suspiciously quiet \u{1F60E} Everything alright over there?",
+    "Taking your time, or taking a peek somewhere else? Either way, welcome back \u{1F440}",
+    "We'll just assume you were deep in thought, and not deep in another tab \u{1F605}",
+  ];
+  const awayIdxRef = { value: -1 };
+  const inactivityIdxRef = { value: -1 };
+
+  function showBlockingModal(messages, idxRef) {
+    let idx = Math.floor(Math.random() * messages.length);
+    if (idx === idxRef.value) idx = (idx + 1) % messages.length;
+    idxRef.value = idx;
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px";
+    overlay.innerHTML =
+      '<div class="card" style="max-width:380px;text-align:center">' +
+        '<p style="font-size:15px;margin-bottom:18px">' + messages[idx] + "</p>" +
+        '<button class="btn btn-primary" id="modalCloseBtn">Back to it</button>' +
+      "</div>";
+    document.body.appendChild(overlay);
+    overlay.querySelector("#modalCloseBtn").addEventListener("click", () => overlay.remove());
+    return overlay;
   }
+
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && testActive) showAwayToast();
+    if (!document.hidden && testActive) showBlockingModal(AWAY_MESSAGES, awayIdxRef);
   });
+
+  // Inactivity: no interaction with the terminal/answer field for 25s
+  // while the test is active -- purely a lighthearted nudge, not a
+  // real cheating detector (and it doesn't touch scoring either way).
+  let lastInteraction = Date.now();
+  let inactivityTimer = null;
+  let inactivityModalOpen = false;
+  function markInteraction() { lastInteraction = Date.now(); }
+  function startInactivityMonitor() {
+    clearInterval(inactivityTimer);
+    lastInteraction = Date.now();
+    inactivityTimer = setInterval(() => {
+      if (!testActive || inactivityModalOpen) return;
+      if (Date.now() - lastInteraction >= 25000) {
+        inactivityModalOpen = true;
+        const overlay = showBlockingModal(INACTIVITY_MESSAGES, inactivityIdxRef);
+        overlay.querySelector("#modalCloseBtn").addEventListener("click", () => {
+          inactivityModalOpen = false;
+          lastInteraction = Date.now();
+        });
+      }
+    }, 2000);
+  }
+  function stopInactivityMonitor() {
+    clearInterval(inactivityTimer);
+  }
+
+  // Milestone encouragement, shown every 4th correct answer -- kept
+  // deliberately generic (never mentions track/score) so it can't leak
+  // placement info, just morale.
+  const MOTIVATION_MESSAGES = [
+    "Not yet, but you'll be a hacker soon \u2014 keep pushing!",
+    "Nice streak \u2014 the shell's starting to feel like home.",
+    "Solid progress. Keep that momentum going.",
+    "You're getting the hang of this \u2014 onward.",
+  ];
+  let correctCount = 0;
+  let motivationIdx = 0;
+  function maybeShowMotivation() {
+    if (correctCount > 0 && correctCount % 4 === 0) {
+      const msg = MOTIVATION_MESSAGES[motivationIdx % MOTIVATION_MESSAGES.length];
+      motivationIdx++;
+      const toast = document.createElement("div");
+      toast.className = "away-toast";
+      toast.style.borderLeft = "4px solid var(--ok)";
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+  }
+
+  function showAnswerFeedback(correct) {
+    return new Promise((resolve) => {
+      const el = document.createElement("div");
+      el.style.cssText =
+        "position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:150;" +
+        "background:" + (correct ? "var(--ok)" : "var(--danger)") + ";color:#fff;border-radius:999px;" +
+        "padding:10px 22px;font-size:16px;font-weight:700;box-shadow:var(--shadow);" +
+        "display:flex;align-items:center;gap:8px";
+      el.textContent = correct ? "\u2713 Correct" : "\u2717 Not quite";
+      document.body.appendChild(el);
+      setTimeout(() => { el.remove(); resolve(); }, 900);
+    });
+  }
 
   function startTimer() {
     timerStart = Date.now();
     clearInterval(timerInterval);
     timerInterval = setInterval(updateTimerDisplay, 1000);
+    startInactivityMonitor();
   }
   function stopTimer() {
     clearInterval(timerInterval);
+    stopInactivityMonitor();
     testActive = false;
   }
   function updateTimerDisplay() {
@@ -196,7 +279,7 @@
     app.innerHTML =
       '<div class="begin">' +
       '<h1>Ready when you are</h1>' +
-      '<p>20 questions in a simulated terminal — 10 Linux, 10 PowerShell. Hints are available if you get stuck, but they cost credit. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
+      '<p>35 questions — 10 Linux, 10 PowerShell, and 15 quick security-concept questions. Hints are available if you get stuck, but they cost credit. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
       '<button class="btn btn-primary" id="beginBtn">Begin the test</button>' +
       "</div>";
     document.getElementById("beginBtn").addEventListener("click", begin);
@@ -223,7 +306,7 @@
       renderQuestion(res.item, res.itemIndex, res.totalItems);
     } catch (err) {
       if (err.status === 409 && err.body && err.body.sessionId) {
-        showResult(err.body.sessionId, err.body.track);
+        showResult(err.body.sessionId);
       } else {
         renderError("Couldn't start the test: " + err.message, { retry: true });
       }
@@ -259,6 +342,7 @@
     const buttons = document.querySelectorAll("#hintButtons .hint-btn");
     buttons.forEach((btn) => {
       btn.addEventListener("click", async () => {
+        markInteraction();
         const level = Number(btn.dataset.level);
         btn.disabled = true;
         const errEl = document.getElementById("hintError");
@@ -319,6 +403,8 @@
   function renderQuestion(item, index, total) {
     testActive = true;
     hintsUnlocked = 0;
+    lastInteraction = Date.now();
+    const isTerminal = item.type === "terminal";
     const shell = shellFor(item);
     const pct = Math.round(((index - 1) / total) * 100);
     app.innerHTML =
@@ -340,14 +426,16 @@
               '<span id="feedbackMsg" style="font-size:12.5px;color:var(--ok);margin-left:8px"></span>' +
             '</div>' +
           '</div>' +
-          '<div class="term-panel ' + shell.css + '">' +
-            '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">' + shell.title + '</span></div>' +
-            '<div class="term-screen" id="termScreen"></div>' +
-            '<div class="term-inputrow">' +
-              '<span class="term-ps1">' + shell.promptHtml + '</span>' +
-              '<input id="termInput" class="term-input" autocomplete="off" spellcheck="false" aria-label="Terminal command">' +
-            '</div>' +
-          '</div>' +
+          (isTerminal ?
+            '<div class="term-panel ' + shell.css + '">' +
+              '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">' + shell.title + '</span></div>' +
+              '<div class="term-screen" id="termScreen"></div>' +
+              '<div class="term-inputrow">' +
+                '<span class="term-ps1">' + shell.promptHtml + '</span>' +
+                '<input id="termInput" class="term-input" autocomplete="off" spellcheck="false" aria-label="Terminal command">' +
+              '</div>' +
+            '</div>'
+            : '') +
           '<div id="answerError"></div>' +
           '<div class="answer-row">' +
             '<input id="answerInput" class="field" style="background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:11px 13px;border-radius:8px;font-size:15px" placeholder="Type your answer" autocomplete="off">' +
@@ -365,38 +453,44 @@
     wireHintButtons(item);
     wireFeedbackForm(item);
 
-    const screen = document.getElementById("termScreen");
-    const termInput = document.getElementById("termInput");
-    shell.banner().split("\n").forEach((line) => appendLine(screen, line, "term-banner"));
-    appendLine(screen, "");
+    let termInput = null;
+    if (isTerminal) {
+      const screen = document.getElementById("termScreen");
+      termInput = document.getElementById("termInput");
+      shell.banner().split("\n").forEach((line) => appendLine(screen, line, "term-banner"));
+      appendLine(screen, "");
 
-    termInput.addEventListener("keydown", async (e) => {
-      if (e.key !== "Enter" || !termInput.value.trim()) return;
-      const command = termInput.value;
-      termInput.value = "";
-      appendLine(screen, shell.promptText + " " + command, "term-cmd");
-      termInput.disabled = true;
-      try {
-        const res = await A72.apiFetch("/session/" + sessionId + "/" + shell.endpoint, {
-          method: "POST",
-          body: JSON.stringify({ itemId: item.itemId, domain: item.domain, command }),
-        });
-        (res.output || "").split("\n").forEach((line) => appendLine(screen, line, res.isError ? "term-err" : null));
-      } catch (err) {
-        appendLine(screen, "error: " + err.message, "term-err");
-      } finally {
-        termInput.disabled = false;
-        termInput.focus();
-      }
-    });
+      termInput.addEventListener("keydown", async (e) => {
+        markInteraction();
+        if (e.key !== "Enter" || !termInput.value.trim()) return;
+        const command = termInput.value;
+        termInput.value = "";
+        appendLine(screen, shell.promptText + " " + command, "term-cmd");
+        termInput.disabled = true;
+        try {
+          const res = await A72.apiFetch("/session/" + sessionId + "/" + shell.endpoint, {
+            method: "POST",
+            body: JSON.stringify({ itemId: item.itemId, domain: item.domain, command }),
+          });
+          (res.output || "").split("\n").forEach((line) => appendLine(screen, line, res.isError ? "term-err" : null));
+        } catch (err) {
+          appendLine(screen, "error: " + err.message, "term-err");
+        } finally {
+          termInput.disabled = false;
+          termInput.focus();
+        }
+      });
+    }
 
     const submitBtn = document.getElementById("submitAnswerBtn");
     const answerInput = document.getElementById("answerInput");
     const errEl = document.getElementById("answerError");
+    answerInput.addEventListener("input", markInteraction);
 
     async function submitAnswer() {
       const answer = answerInput.value.trim();
       if (!answer) return;
+      markInteraction();
       submitBtn.disabled = true;
       answerInput.disabled = true;
       errEl.innerHTML = "";
@@ -405,9 +499,11 @@
           method: "POST",
           body: JSON.stringify({ itemId: item.itemId, domain: item.domain, answer }),
         });
+        if (res.lastAnswerCorrect) { correctCount++; maybeShowMotivation(); }
+        await showAnswerFeedback(res.lastAnswerCorrect);
         if (res.done) {
           stopTimer();
-          showResult(sessionId, res.track);
+          showResult(sessionId);
           showSurveyModal(sessionId);
         } else if (res.item) {
           renderQuestion(res.item, res.itemIndex, res.totalItems);
@@ -425,37 +521,15 @@
     answerInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAnswer(); });
   }
 
-  async function showResult(sid, track) {
+  async function showResult(sid) {
     testActive = false;
-    app.innerHTML = '<div class="result"><p class="muted">Finishing up…</p></div>';
-    let result = { track, domain_scores: null, composite_score: null };
-    try {
-      const res = await A72.apiFetch("/session/" + sid + "/result");
-      if (res && res.track) result = res;
-    } catch (e) { /* fall back to the track we already have */ }
-
-    const isAdvanced = result.track === "Advanced";
-    const badgeClass = isAdvanced ? "advanced" : "basic";
-    const blurb = isAdvanced
-      ? "You're placed on the Advanced track — Module 1 will move at the standard pace."
-      : "You're placed on the Basic track — Module 1 starts with extra support to get you up to speed.";
-
-    let scoreRows = "";
-    if (result.domain_scores) {
-      scoreRows = Object.keys(result.domain_scores)
-        .filter((k) => k !== "_overall")
-        .map((k) => (
-          '<div class="card card-tight" style="display:flex;justify-content:space-between;margin-bottom:8px">' +
-          '<span class="muted">' + k.replace(/_/g, " ") + '</span><span class="mono">' + result.domain_scores[k] + '%</span></div>'
-        )).join("");
-    }
-
+    stopInactivityMonitor();
+    // Deliberately no track or scores here -- that's placement info for
+    // the instructor dashboard (/admin/students/{id}), not the student.
     app.innerHTML =
       '<div class="result">' +
-        '<div class="badge ' + badgeClass + ' track-badge">' + result.track + ' track</div>' +
         '<h1>You’re all set</h1>' +
-        '<p class="blurb">' + blurb + '</p>' +
-        (scoreRows ? '<div class="score-grid">' + scoreRows + '</div>' : '') +
+        '<p class="blurb">Thanks for working through it — your instructor will use this to help place you at the right pace for Module 1.</p>' +
         '<a href="index.html" class="btn btn-secondary">Back to home</a>' +
       '</div>';
   }

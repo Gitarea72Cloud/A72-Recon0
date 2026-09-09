@@ -17,6 +17,9 @@ FINAL_ADVANCED_THRESHOLD = 70.0  # composite Stage0+StageA score needed to land 
 DOMAINS = [
     "linux_cli",
     "windows_cli",
+    "red_team",
+    "blue_team",
+    "grey_team",
     "networking",
     "scripting",
     "core_security",
@@ -100,6 +103,19 @@ def recommend(domain_scores: dict, track: str) -> str:
                 f"Comfortable with PowerShell ({windows:.0f}%) but noticeably weaker in Linux "
                 f"({linux:.0f}%) -- targeted Linux CLI practice recommended before Module 1."
             )
+
+    security_domains = {"red_team": "Red Team", "blue_team": "Blue Team", "grey_team": "Grey Team/ethics"}
+    security_scores = {label: domain_scores[key] for key, label in security_domains.items() if key in domain_scores}
+    if len(security_scores) >= 2:
+        weakest = min(security_scores, key=security_scores.get)
+        strongest = max(security_scores, key=security_scores.get)
+        if security_scores[strongest] - security_scores[weakest] >= GAP_THRESHOLD:
+            lines.append(
+                f"Within security concepts, strongest in {strongest} ({security_scores[strongest]:.0f}%), "
+                f"weaker in {weakest} ({security_scores[weakest]:.0f}%) -- worth a conceptual refresher there."
+            )
+        else:
+            lines.append("Even conceptual grounding across Red/Blue/Grey Team topics.")
 
     if overall >= 85:
         lines.append("Consistently strong overall -- a good candidate to move quickly, possibly a peer-mentor fit.")

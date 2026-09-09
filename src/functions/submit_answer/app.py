@@ -61,7 +61,7 @@ def lambda_handler(event, context):
     if not session:
         return response(404, {"error": "session not found"})
     if session.get("stage") == "done":
-        return response(409, {"error": "session already finalized", "track": session.get("track")})
+        return response(409, {"error": "session already finalized"})
 
     domain = body.get("domain", "unknown")
     question = db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}")
@@ -91,16 +91,18 @@ def lambda_handler(event, context):
     if next_item:
         return response(200, {
             "done": False, "stage": session["stage"], "running_score": stage_pct,
-            "lastAnswerCredit": credit, "lastAnswerHintsUsed": hints_used,
+            "lastAnswerCorrect": correct, "lastAnswerCredit": credit, "lastAnswerHintsUsed": hints_used,
             "item": itembank.public_item(next_item), "itemIndex": index, "totalItems": total,
         })
 
     # Current stage exhausted -- route to the next stage, or finalize.
+    # Track/scores are never sent back here: placement is instructor-facing
+    # information, not shown to the student (see /admin/students/{id}).
     if session["stage"] == "stage0":
         route = scoring.route_after_stage0(stage_pct)
         if route == "basic":
-            result = finalize(student, session_id, scoring.finalize_from_stage0_only(stage_pct), stage_scores)
-            return response(200, {"done": True, "track": result["track"]})
+            finalize(student, session_id, scoring.finalize_from_stage0_only(stage_pct), stage_scores)
+            return response(200, {"done": True, "lastAnswerCorrect": correct})
 
         next_stage = "stageA" if route == "stageA" else "stageB"
         db.update_item(
@@ -112,28 +114,25 @@ def lambda_handler(event, context):
         nxt, idx, tot = itembank.next_item(session)
         if nxt:
             return response(200, {
-                "done": False, "nextStage": next_stage,
+                "done": False, "nextStage": next_stage, "lastAnswerCorrect": correct,
                 "item": itembank.public_item(nxt), "itemIndex": idx, "totalItems": tot,
             })
         # No Stage A/B content loaded yet (Phase 0 content work) -- finalize
         # from Stage 0 alone rather than leaving the session stuck with
         # nothing to serve. Remove once Stage A/B items exist.
         track = scoring.ADVANCED if stage_pct >= scoring.STAGE0_HIGH_THRESHOLD else scoring.BASIC
-        result = finalize(student, session_id, track, stage_scores)
-        return response(200, {
-            "done": True, "track": result["track"],
-            "note": "finalized from Stage 0 only -- no Stage A/B items loaded yet",
-        })
+        finalize(student, session_id, track, stage_scores)
+        return response(200, {"done": True, "lastAnswerCorrect": correct})
 
     if session["stage"] == "stageB":
         track = scoring.finalize_after_stage_b(stage_pct)
-        result = finalize(student, session_id, track, stage_scores)
-        return response(200, {"done": True, "track": result["track"]})
+        finalize(student, session_id, track, stage_scores)
+        return response(200, {"done": True, "lastAnswerCorrect": correct})
 
     if session["stage"] == "stageA":
         stage0_pct = float(session.get("stage0_score", 0.0))
         track = scoring.finalize_after_stage_a(stage0_pct, stage_pct)
-        result = finalize(student, session_id, track, stage_scores)
-        return response(200, {"done": True, "track": result["track"]})
+        finalize(student, session_id, track, stage_scores)
+        return response(200, {"done": True, "lastAnswerCorrect": correct})
 
     return response(400, {"error": f"unknown stage {session['stage']}"})
