@@ -40,7 +40,7 @@
     <section>
       <h2>The rules</h2>
       <ul class="plain">
-        <li>The test is <strong>5 questions</strong>, all about the Linux command line. It takes most students 10–15 minutes.</li>
+        <li>The test is <strong>30 questions</strong> — 15 about the Linux command line, then 15 about PowerShell. It takes most students 30–40 minutes.</li>
         <li>Every question uses a small simulated terminal — run whatever commands you like, then type your answer in the box beside it.</li>
         <li>Once you submit an answer, you can't go back and change it.</li>
         <li>This isn't graded pass/fail on individual questions — it's a placement tool. There's no benefit to guessing, and no penalty for taking your time.</li>
@@ -55,8 +55,8 @@
     </section>
 
     <section>
-      <h2>Command reference</h2>
-      <p class="muted">Everything the terminal understands. Standard Linux syntax — pipes (<code class="inline">|</code>) work between any of these.</p>
+      <h2>Command reference — Linux</h2>
+      <p class="muted">Everything the Linux terminal understands. Standard bash syntax — pipes (<code class="inline">|</code>) work between any of these.</p>
       <div class="tblwrap">
         <table class="cmdtable">
           <thead><tr><th>Command</th><th>What it does</th></tr></thead>
@@ -72,6 +72,28 @@
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section>
+      <h2>Command reference — PowerShell</h2>
+      <p class="muted">Everything the PowerShell terminal understands. Common aliases work too (<code class="inline">ls</code>/<code class="inline">dir</code> for <code class="inline">Get-ChildItem</code>, <code class="inline">cat</code>/<code class="inline">type</code> for <code class="inline">Get-Content</code>) — pipes (<code class="inline">|</code>) work between any of these.</p>
+      <div class="tblwrap">
+        <table class="cmdtable">
+          <thead><tr><th>Cmdlet</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Get-Location</td><td>Print the current directory.</td></tr>
+            <tr><td class="mono">Get-ChildItem</td><td>List files with details (name, size, date). Add <code class="inline">-Name</code> for names only.</td></tr>
+            <tr><td class="mono">Get-Item &lt;file&gt;</td><td>Show one file's details, including its <code class="inline">Length</code>.</td></tr>
+            <tr><td class="mono">Get-Content &lt;file&gt;</td><td>Print a file's contents.</td></tr>
+            <tr><td class="mono">Measure-Object -Character</td><td>Count characters in piped input, e.g. <code class="inline">Get-Content file.txt | Measure-Object -Character</code>.</td></tr>
+            <tr><td class="mono">Get-FileHash &lt;file&gt;</td><td>Compute a hash. Defaults to SHA256; add <code class="inline">-Algorithm MD5</code> for MD5.</td></tr>
+            <tr><td class="mono">ConvertFrom-Base64String</td><td>Decode Base64 input, e.g. <code class="inline">Get-Content secret.b64 | ConvertFrom-Base64String</code>.</td></tr>
+            <tr><td class="mono">ConvertTo-Base64String</td><td>Encode input to Base64.</td></tr>
+            <tr><td class="mono">Write-Output "text"</td><td>Print text back out — useful piped into other cmdlets.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted" style="margin-top:10px;font-size:13px">Two of these — <code class="inline">ConvertFrom-Base64String</code> and <code class="inline">ConvertTo-Base64String</code> — are simplified for this sandbox; real PowerShell does Base64 conversion via <code class="inline">[Convert]</code> .NET methods rather than a dedicated cmdlet.</p>
     </section>
 
     <section>

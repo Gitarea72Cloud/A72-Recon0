@@ -25,13 +25,31 @@ def lambda_handler(event, context):
     # Placement is one-shot per student: if a prior session already
     # finalized, point back at it instead of allowing a fresh retake.
     existing = db.query_prefix(f"STUDENT#{student}", "SESSION#")
-    done = next((s for s in existing if s.get("checkpoint") == "placement" and s.get("stage") == "done"), None)
+    placement_sessions = [s for s in existing if s.get("checkpoint") == "placement"]
+    done = next((s for s in placement_sessions if s.get("stage") == "done"), None)
     if done:
         return response(409, {
             "error": "placement already completed",
             "sessionId": done["SK"].replace("SESSION#", ""),
             "track": done.get("track"),
         })
+
+    # A refresh or re-navigation to the test page shouldn't restart from
+    # question 1 -- resume whatever's already in progress instead of
+    # abandoning it for a brand new session (that's what was showing
+    # students the same early questions repeatedly).
+    in_progress = next(iter(placement_sessions), None)
+    if in_progress:
+        item, index, total = itembank.next_item(in_progress)
+        session_id = in_progress["SK"].replace("SESSION#", "")
+        if item:
+            return response(200, {
+                "sessionId": session_id, "item": itembank.public_item(item),
+                "itemIndex": index, "totalItems": total,
+            })
+        # Stage exhausted but never finalized (e.g. the process was
+        # interrupted right at that boundary) -- nothing sensible to
+        # resume into; fall through and start a fresh session.
 
     session_id = str(uuid.uuid4())
     session = {

@@ -171,6 +171,24 @@ Resources:
             Path: /session/{sessionId}/terminal
             Method: POST
 
+  PowershellExecFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/powershell_exec/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /session/{sessionId}/powershell
+            Method: POST
+
   SubmitAnswerFunction:
     Type: AWS::Serverless::Function
     Properties:

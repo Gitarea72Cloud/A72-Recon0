@@ -16,6 +16,7 @@ FINAL_ADVANCED_THRESHOLD = 70.0  # composite Stage0+StageA score needed to land 
 
 DOMAINS = [
     "linux_cli",
+    "windows_cli",
     "networking",
     "scripting",
     "core_security",

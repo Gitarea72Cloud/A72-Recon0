@@ -79,11 +79,19 @@
   let sessionId = null;
   let currentItem = null; // {itemId, domain, prompt, type}
 
+  const SHELL_CONFIG = {
+    linux_cli: { endpoint: "terminal", promptText: "student@placement:~$", title: "student@placement — bash" },
+    windows_cli: { endpoint: "powershell", promptText: "PS C:\\Users\\student>", title: "student@placement — PowerShell" },
+  };
+  function shellFor(item) {
+    return SHELL_CONFIG[item.domain] || SHELL_CONFIG.linux_cli;
+  }
+
   function renderBegin() {
     app.innerHTML =
       '<div class="begin">' +
       '<h1>Ready when you are</h1>' +
-      '<p>5 questions, all in a simulated Linux terminal. Takes most people 10–15 minutes. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
+      '<p>30 questions in a simulated terminal — 15 Linux, 15 PowerShell. Takes most people 30–40 minutes. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
       '<button class="btn btn-primary" id="beginBtn">Begin the test</button>' +
       "</div>";
     document.getElementById("beginBtn").addEventListener("click", begin);
@@ -127,6 +135,7 @@
 
   function renderQuestion(item, index, total) {
     currentItem = item;
+    const shell = shellFor(item);
     const pct = Math.round(((index - 1) / total) * 100);
     app.innerHTML =
       '<div class="progress-row">' +
@@ -135,10 +144,10 @@
       '</div>' +
       '<div class="card prompt-card"><h2>' + item.prompt + '</h2></div>' +
       '<div class="term-panel">' +
-        '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">student@placement — bash</span></div>' +
+        '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">' + shell.title + '</span></div>' +
         '<div class="term-screen" id="termScreen"></div>' +
         '<div class="term-inputrow">' +
-          '<span class="term-ps1">student@placement:~$</span>' +
+          '<span class="term-ps1">' + shell.promptText + '</span>' +
           '<input id="termInput" class="term-input" autocomplete="off" spellcheck="false" aria-label="Terminal command">' +
         '</div>' +
       '</div>' +
@@ -156,10 +165,10 @@
       if (e.key !== "Enter" || !termInput.value.trim()) return;
       const command = termInput.value;
       termInput.value = "";
-      appendLine(screen, "student@placement:~$ " + command, "term-cmd");
+      appendLine(screen, shell.promptText + " " + command, "term-cmd");
       termInput.disabled = true;
       try {
-        const res = await A72.apiFetch("/session/" + sessionId + "/terminal", {
+        const res = await A72.apiFetch("/session/" + sessionId + "/" + shell.endpoint, {
           method: "POST",
           body: JSON.stringify({ itemId: item.itemId, domain: item.domain, command }),
         });
