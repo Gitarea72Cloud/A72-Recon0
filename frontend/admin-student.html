@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student profile — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .adminwrap { max-width: 780px; margin: 0 auto; padding: 32px 24px 100px; }
+  .backlink { font-size: 13.5px; margin-bottom: 18px; display: inline-block; }
+  .profilehead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+  .profilehead h1 { font-size: 22px; margin: 0; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .stat .v { font-family: ui-monospace, monospace; font-size: 20px; font-weight: 700; }
+  .stat .l { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .rec-card { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 26px; }
+  .rec-card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent-hover); margin: 0 0 6px; }
+  table.datatable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.datatable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.datatable td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .tblwrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; overflow-x: auto; margin-bottom: 10px; }
+  .ok-dot { color: var(--ok); } .bad-dot { color: var(--danger); }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html">Help</a>
+    <a href="admin.html">Admin</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="adminwrap" id="app">
+    <p class="muted">Loading…</p>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const app = document.getElementById("app");
+  const studentId = new URLSearchParams(location.search).get("id");
+
+  function fmtDuration(secs) {
+    if (secs == null) return "—";
+    return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+  }
+  function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : "—"; }
+
+  async function render() {
+    const p = await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId));
+    const domainRows = Object.keys(p.domainScores || {})
+      .filter((k) => k !== "_overall")
+      .map((k) => `<div class="stat"><div class="v">${p.domainScores[k]}%</div><div class="l">${k.replace(/_/g, " ")}</div></div>`)
+      .join("");
+
+    const answerRows = (p.answers || []).map((a) => `
+      <tr>
+        <td class="mono">${a.itemId}</td>
+        <td>${a.domain.replace(/_/g, " ")}</td>
+        <td>${a.correct ? '<span class="ok-dot">&#10003; correct</span>' : '<span class="bad-dot">&#10007; wrong</span>'}</td>
+        <td>${a.hintsUsed || 0}</td>
+        <td>${Math.round((a.credit ?? (a.correct ? 1 : 0)) * 100)}%</td>
+      </tr>`).join("");
+
+    app.innerHTML = `
+      <a href="admin.html" class="backlink">&larr; Back to dashboard</a>
+      <div class="profilehead">
+        <h1>${p.email}</h1>
+        ${p.status === "done" ? '<span class="badge ' + (p.track === "Advanced" ? "advanced" : "basic") + '">' + p.track + " track</span>" : '<span class="muted">Test in progress</span>'}
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="v">${p.compositeScore != null ? p.compositeScore + "%" : "—"}</div><div class="l">Composite score</div></div>
+        ${domainRows}
+        <div class="stat"><div class="v">${fmtDuration(p.durationSeconds)}</div><div class="l">Time taken</div></div>
+        <div class="stat"><div class="v">${p.hintsUsedTotal || 0}</div><div class="l">Hints used</div></div>
+      </div>
+
+      ${p.recommendation ? `<div class="rec-card"><h3>Suggested read</h3><p style="margin:0">${p.recommendation}</p></div>` : ""}
+
+      <p class="muted" style="font-size:13px">Started ${fmtDate(p.startedAt)}${p.completedAt ? " · completed " + fmtDate(p.completedAt) : ""}</p>
+
+      <h3 style="font-size:15px;margin:20px 0 10px">Answer history</h3>
+      <div class="tblwrap"><table class="datatable">
+        <thead><tr><th>Item</th><th>Domain</th><th>Result</th><th>Hints</th><th>Credit</th></tr></thead>
+        <tbody>${answerRows || '<tr><td colspan="5" class="muted">No answers yet.</td></tr>'}</tbody>
+      </table></div>
+
+      <div class="card" style="margin-top:24px">
+        <h3 style="margin:0 0 6px;font-size:14px">Reset this student's test</h3>
+        <p class="muted" style="font-size:13px;margin-bottom:14px">Deletes their placement session and result so they can take it again from question 1. Use this only when there's a real reason to let them retake it — it can't be undone.</p>
+        <button class="btn btn-secondary" id="resetBtn">Reset test for this student</button>
+        <div id="resetMsg" style="margin-top:10px"></div>
+      </div>
+    `;
+
+    document.getElementById("resetBtn").addEventListener("click", async () => {
+      if (!confirm(`Reset the placement test for ${p.email}? This deletes their result and can't be undone.`)) return;
+      const btn = document.getElementById("resetBtn");
+      const msg = document.getElementById("resetMsg");
+      btn.disabled = true;
+      try {
+        await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId) + "/reset", { method: "POST" });
+        msg.innerHTML = '<div class="alert alert-info">Done — they can start a fresh attempt next time they sign in.</div>';
+      } catch (err) {
+        msg.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+        btn.disabled = false;
+      }
+    });
+  }
+
+  (async function init() {
+    const signedIn = await A72.isSignedIn();
+    if (!signedIn) { A72.redirectToSignIn("admin-student.html?id=" + encodeURIComponent(studentId || "")); return; }
+    const instructor = await A72.isInstructor();
+    A72.renderAuthNav(document.getElementById("authNav"));
+    if (!instructor) {
+      app.innerHTML = '<div class="alert alert-error">This page is for instructors only.</div><a href="index.html" class="btn btn-secondary">Back to home</a>';
+      return;
+    }
+    if (!studentId) {
+      app.innerHTML = '<div class="alert alert-error">No student specified.</div><a href="admin.html" class="btn btn-secondary">Back to dashboard</a>';
+      return;
+    }
+    try {
+      await render();
+    } catch (err) {
+      app.innerHTML = '<div class="alert alert-error">' + err.message + '</div><a href="admin.html" class="btn btn-secondary">Back to dashboard</a>';
+    }
+  })();
+})();
+</script>
+</body>
+</html>

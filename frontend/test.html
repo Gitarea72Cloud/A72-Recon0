@@ -286,6 +286,36 @@
     });
   }
 
+  function wireFeedbackForm(item) {
+    const toggle = document.getElementById("feedbackToggle");
+    const form = document.getElementById("feedbackForm");
+    toggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      form.hidden = !form.hidden;
+    });
+    document.getElementById("feedbackSubmit").addEventListener("click", async () => {
+      const comment = document.getElementById("feedbackText").value.trim();
+      if (!comment) return;
+      const flagged = document.getElementById("feedbackFlag").checked;
+      const btn = document.getElementById("feedbackSubmit");
+      const msg = document.getElementById("feedbackMsg");
+      btn.disabled = true;
+      try {
+        await A72.apiFetch("/session/" + sessionId + "/feedback", {
+          method: "POST",
+          body: JSON.stringify({ itemId: item.itemId, domain: item.domain, comment, flagged }),
+        });
+        msg.textContent = "Thanks, sent.";
+        document.getElementById("feedbackText").value = "";
+      } catch (err) {
+        msg.style.color = "var(--danger)";
+        msg.textContent = "Couldn't send: " + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
   function renderQuestion(item, index, total) {
     testActive = true;
     hintsUnlocked = 0;
@@ -301,7 +331,15 @@
       '</div>' +
       '<div class="test-layout">' +
         '<div class="test-main">' +
-          '<div class="card prompt-card"><h2>' + item.prompt + '</h2></div>' +
+          '<div class="card prompt-card"><h2>' + item.prompt + '</h2>' +
+            '<a href="#" id="feedbackToggle" style="font-size:12.5px;display:inline-block;margin-top:8px">Something wrong with this question?</a>' +
+            '<div id="feedbackForm" hidden style="margin-top:10px">' +
+              '<textarea id="feedbackText" rows="2" style="width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13.5px;font-family:inherit" placeholder="What\'s wrong, or any comment on this question…"></textarea>' +
+              '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);margin:6px 0"><input type="checkbox" id="feedbackFlag"> Flag this as broken/incorrect</label>' +
+              '<button class="btn btn-secondary" id="feedbackSubmit" style="font-size:13px;padding:7px 14px">Send feedback</button>' +
+              '<span id="feedbackMsg" style="font-size:12.5px;color:var(--ok);margin-left:8px"></span>' +
+            '</div>' +
+          '</div>' +
           '<div class="term-panel ' + shell.css + '">' +
             '<div class="term-titlebar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-name">' + shell.title + '</span></div>' +
             '<div class="term-screen" id="termScreen"></div>' +
@@ -325,6 +363,7 @@
 
     updateTimerDisplay();
     wireHintButtons(item);
+    wireFeedbackForm(item);
 
     const screen = document.getElementById("termScreen");
     const termInput = document.getElementById("termInput");
@@ -369,6 +408,7 @@
         if (res.done) {
           stopTimer();
           showResult(sessionId, res.track);
+          showSurveyModal(sessionId);
         } else if (res.item) {
           renderQuestion(res.item, res.itemIndex, res.totalItems);
         } else {
@@ -418,6 +458,68 @@
         (scoreRows ? '<div class="score-grid">' + scoreRows + '</div>' : '') +
         '<a href="index.html" class="btn btn-secondary">Back to home</a>' +
       '</div>';
+  }
+
+  const SURVEY_QUESTIONS = [
+    { key: "difficulty", label: "How was the difficulty?", options: ["Too easy", "Just right", "Too hard"] },
+    { key: "pace", label: "How was the pace / length?", options: ["Too short", "Good", "Too long"] },
+    { key: "clarity", label: "Were the questions clearly worded?", options: ["Yes", "Mostly", "Not really"] },
+    { key: "terminalFeel", label: "Did the simulated terminal feel realistic enough?", options: ["Yes", "Somewhat", "No"] },
+  ];
+
+  function showSurveyModal(sid) {
+    const ratings = {};
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px";
+    const optionsHtml = SURVEY_QUESTIONS.map((q) => `
+      <div style="margin-bottom:16px">
+        <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">${q.label}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${q.options.map((opt) => `<button type="button" class="btn btn-secondary survey-opt" data-key="${q.key}" data-val="${opt}" style="padding:7px 12px;font-size:13px">${opt}</button>`).join("")}
+        </div>
+      </div>`).join("");
+
+    overlay.innerHTML = `
+      <div class="card" style="max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
+        <h2 style="font-size:18px;margin-bottom:4px">Quick feedback?</h2>
+        <p class="muted" style="font-size:13.5px;margin-bottom:18px">Totally optional, but it helps us improve the test. Doesn't affect your result.</p>
+        ${optionsHtml}
+        <div style="margin-bottom:16px">
+          <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Anything else you'd change, or want to tell us?</div>
+          <textarea id="surveyFreeText" rows="3" style="width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px 11px;font-size:14px;font-family:inherit" placeholder="Optional — write as much or as little as you like"></textarea>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" id="surveySubmit">Send feedback</button>
+          <button class="btn btn-secondary" id="surveySkip">Skip</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll(".survey-opt").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        ratings[btn.dataset.key] = btn.dataset.val;
+        overlay.querySelectorAll('.survey-opt[data-key="' + btn.dataset.key + '"]').forEach((b) => {
+          b.classList.toggle("btn-primary", b === btn);
+          b.classList.toggle("btn-secondary", b !== btn);
+        });
+      });
+    });
+
+    function close() { overlay.remove(); }
+    overlay.querySelector("#surveySkip").addEventListener("click", close);
+    overlay.querySelector("#surveySubmit").addEventListener("click", async () => {
+      const freeText = overlay.querySelector("#surveyFreeText").value.trim();
+      const btn = overlay.querySelector("#surveySubmit");
+      btn.disabled = true;
+      try {
+        await A72.apiFetch("/session/" + sid + "/survey", {
+          method: "POST",
+          body: JSON.stringify({ ratings, freeText }),
+        });
+      } catch (e) { /* non-critical, close either way */ }
+      close();
+    });
   }
 
   (async function init() {

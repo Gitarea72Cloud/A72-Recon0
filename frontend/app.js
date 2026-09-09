@@ -29,6 +29,25 @@
     return getIdToken().then(() => true).catch(() => false);
   }
 
+  // Client-side check only, for UI gating (show/hide the admin link) --
+  // the real enforcement is server-side (auth.is_instructor on every
+  // /admin/* route), this just avoids flashing admin UI at students.
+  async function isInstructor() {
+    try {
+      const cognitoUser = getCurrentUser();
+      if (!cognitoUser) return false;
+      return await new Promise((resolve) => {
+        cognitoUser.getSession((err, session) => {
+          if (err || !session || !session.isValid()) return resolve(false);
+          const groups = session.getIdToken().payload["cognito:groups"] || [];
+          resolve(groups.indexOf("instructors") !== -1);
+        });
+      });
+    } catch (e) {
+      return false;
+    }
+  }
+
   function signOut() {
     const cognitoUser = getCurrentUser();
     if (cognitoUser) cognitoUser.signOut();
@@ -94,7 +113,9 @@
     const signedIn = await isSignedIn();
     if (signedIn) {
       const user = getCurrentUser();
+      const instructor = await isInstructor();
       el.innerHTML =
+        (instructor ? '<a href="admin.html">Admin</a>' : "") +
         '<span class="muted" style="font-size:13px">' + (user ? user.getUsername() : "") + "</span>" +
         '<a href="#" id="signOutLink">Sign out</a>';
       document.getElementById("signOutLink").addEventListener("click", (e) => {
@@ -109,7 +130,7 @@
   }
 
   window.A72 = {
-    userPool, getCurrentUser, getIdToken, isSignedIn, signOut,
+    userPool, getCurrentUser, getIdToken, isSignedIn, isInstructor, signOut,
     signIn, completeNewPassword, apiFetch, redirectToSignIn, renderAuthNav,
   };
 })();

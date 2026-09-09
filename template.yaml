@@ -248,11 +248,19 @@ Resources:
     Properties:
       CodeUri: src/functions/admin/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPool
       Layers:
         - !Ref CommonLayer
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref DataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+              Resource: !GetAtt UserPool.Arn
       Events:
         Questions:
           Type: HttpApi
@@ -266,6 +274,66 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /admin/results
             Method: GET
+        Students:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/students
+            Method: GET
+        StudentProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/students/{studentId}
+            Method: GET
+        StudentReset:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/students/{studentId}/reset
+            Method: POST
+        Feedback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/feedback
+            Method: GET
+
+  SubmitFeedbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/submit_feedback/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /session/{sessionId}/feedback
+            Method: POST
+
+  SubmitSurveyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/submit_survey/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /session/{sessionId}/survey
+            Method: POST
 
   # ---------------------------------------------------------------------
   # Static site — private S3 origin, meant to sit behind a CloudFront

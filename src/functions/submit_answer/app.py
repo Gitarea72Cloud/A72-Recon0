@@ -28,6 +28,7 @@ def canonical(s: str) -> str:
 
 
 def finalize(student: str, session_id: str, track: str, domain_scores: dict):
+    decided_at = int(time.time())
     result = {
         "PK": f"RESULT#{session_id}",
         "SK": "SUMMARY",
@@ -35,13 +36,13 @@ def finalize(student: str, session_id: str, track: str, domain_scores: dict):
         "composite_score": domain_scores.get("_overall", 0.0),
         "domain_scores": domain_scores,
         "track": track,
-        "decided_at": int(time.time()),
+        "decided_at": decided_at,
     }
     db.put_item(result)
     db.update_item(
         f"STUDENT#{student}", f"SESSION#{session_id}",
-        "SET stage = :s, track = :t",
-        {":s": "done", ":t": track},
+        "SET stage = :s, track = :t, completed_at = :ca",
+        {":s": "done", ":t": track, ":ca": decided_at},
     )
     return result
 

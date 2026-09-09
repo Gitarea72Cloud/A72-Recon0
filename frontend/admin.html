@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .adminwrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 100px; }
+  .pagehead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; }
+  .pagehead h1 { font-size: 26px; margin: 0; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+  .tab { padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active { color: var(--ink); border-bottom-color: var(--cta); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+  .stat .v { font-family: ui-monospace, monospace; font-size: 24px; font-weight: 700; }
+  .stat .l { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+
+  .section { margin-bottom: 36px; }
+  .section h2 { font-size: 16px; margin-bottom: 12px; }
+
+  table.datatable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.datatable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.datatable td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  table.datatable tr:hover td { background: var(--surface-2); }
+  .tblwrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; overflow-x: auto; }
+
+  .bar-track { width: 80px; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .bar-fill { height: 100%; border-radius: 999px; }
+  .bar-fill.ok { background: var(--ok); } .bar-fill.warn { background: var(--basic); } .bar-fill.bad { background: var(--danger); }
+
+  .fb-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13.5px; }
+  .fb-card .meta { font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+  .fb-card.flagged { border-color: var(--danger); }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html">Help</a>
+    <a href="admin.html" class="active">Admin</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="adminwrap">
+    <div class="pagehead"><h1>Instructor dashboard</h1></div>
+    <div class="tabs" id="tabs" hidden>
+      <div class="tab" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="students">Students</div>
+      <div class="tab" data-tab="feedback">Feedback</div>
+    </div>
+    <div id="app"><p class="muted">Loading…</p></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const app = document.getElementById("app");
+
+  function fmtDuration(secs) {
+    if (secs == null) return "—";
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return m + "m " + s + "s";
+  }
+  function fmtDate(ts) {
+    if (!ts) return "—";
+    return new Date(ts * 1000).toLocaleString();
+  }
+  function barClass(pct) {
+    if (pct >= 70) return "ok";
+    if (pct >= 40) return "warn";
+    return "bad";
+  }
+
+  async function renderOverview() {
+    const d = await A72.apiFetch("/admin/results");
+    const trackRows = Object.keys(d.trackDistribution || {})
+      .map((t) => `<div class="stat"><div class="v">${d.trackDistribution[t]}</div><div class="l">${t} track</div></div>`)
+      .join("");
+    const domainRows = Object.keys(d.domainAverages || {})
+      .map((dom) => `
+        <tr><td>${dom.replace(/_/g, " ")}</td><td>
+          <span class="bar-track"><span class="bar-fill ${barClass(d.domainAverages[dom])}" style="width:${d.domainAverages[dom]}%"></span></span>
+          ${d.domainAverages[dom]}%
+        </td></tr>`)
+      .join("");
+    const itemRows = (d.itemStats || []).map((it) => `
+      <tr>
+        <td class="mono">${it.itemId}</td>
+        <td>${it.domain.replace(/_/g, " ")}</td>
+        <td>${it.answered}</td>
+        <td><span class="bar-track"><span class="bar-fill ${barClass(it.passRate)}" style="width:${it.passRate}%"></span></span>${it.passRate}%</td>
+        <td>${it.avgHints}</td>
+      </tr>`).join("");
+
+    return `
+      <div class="stats">
+        <div class="stat"><div class="v">${d.provisionedAccounts ?? "—"}</div><div class="l">Provisioned accounts</div></div>
+        <div class="stat"><div class="v">${d.totalStarted}</div><div class="l">Started placement</div></div>
+        <div class="stat"><div class="v">${d.totalCompleted}</div><div class="l">Completed (${d.completionRate}%)</div></div>
+        <div class="stat"><div class="v">${d.avgCompositeScore}%</div><div class="l">Avg. composite score</div></div>
+        <div class="stat"><div class="v">${fmtDuration(d.avgDurationSeconds)}</div><div class="l">Avg. time to complete</div></div>
+        ${trackRows}
+      </div>
+
+      <div class="section">
+        <h2>Average score by domain</h2>
+        <div class="tblwrap"><table class="datatable">
+          <thead><tr><th>Domain</th><th>Cohort average</th></tr></thead>
+          <tbody>${domainRows || '<tr><td colspan="2" class="muted">No completed sessions yet.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="section">
+        <h2>Per-question performance</h2>
+        <p class="muted" style="font-size:13px;margin-top:-6px">Sorted by hardest first — low pass rate or high hint usage flags a question worth reviewing (or a student cohort that needs more support on that topic).</p>
+        <div class="tblwrap"><table class="datatable">
+          <thead><tr><th>Item</th><th>Domain</th><th>Answered</th><th>Pass rate</th><th>Avg. hints used</th></tr></thead>
+          <tbody>${itemRows || '<tr><td colspan="5" class="muted">No answers recorded yet.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+      <p class="muted" style="font-size:12.5px">${d.feedbackCount} question-feedback comment(s) and ${d.surveyCount} exit-survey response(s) — see the Feedback tab.</p>
+    `;
+  }
+
+  async function renderStudents() {
+    const d = await A72.apiFetch("/admin/students");
+    const rows = d.students.map((s) => `
+      <tr>
+        <td><a href="admin-student.html?id=${encodeURIComponent(s.studentId)}">${s.email}</a></td>
+        <td>${s.status === "done" ? '<span class="badge ' + (s.track === "Advanced" ? "advanced" : "basic") + '">' + s.track + "</span>" : '<span class="muted">in progress</span>'}</td>
+        <td>${s.compositeScore != null ? s.compositeScore + "%" : "—"}</td>
+        <td>${fmtDuration(s.durationSeconds)}</td>
+        <td>${s.hintsUsedTotal || 0}</td>
+        <td>${fmtDate(s.startedAt)}</td>
+      </tr>`).join("");
+    return `
+      <div class="tblwrap"><table class="datatable">
+        <thead><tr><th>Student</th><th>Track</th><th>Score</th><th>Duration</th><th>Hints used</th><th>Started</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="muted">No students have started yet.</td></tr>'}</tbody>
+      </table></div>
+    `;
+  }
+
+  async function renderFeedback() {
+    const d = await A72.apiFetch("/admin/feedback");
+    const fbCards = (d.itemFeedback || []).map((f) => `
+      <div class="fb-card ${f.flagged ? "flagged" : ""}">
+        <div class="meta">${f.domain.replace(/_/g, " ")} · ${f.itemId} · ${fmtDate(f.submittedAt)} ${f.flagged ? '· <strong style="color:var(--danger)">FLAGGED</strong>' : ""}</div>
+        ${f.comment}
+      </div>`).join("") || '<p class="muted">No question feedback submitted yet.</p>';
+    const surveyCards = (d.surveys || []).map((s) => `
+      <div class="fb-card">
+        <div class="meta">${fmtDate(s.submittedAt)}</div>
+        <div style="margin-bottom:6px">${Object.entries(s.ratings || {}).map(([k, v]) => `<span class="badge" style="background:var(--surface-2);color:var(--muted);margin-right:6px">${k}: ${v}</span>`).join("")}</div>
+        ${s.freeText ? s.freeText : '<span class="muted">No comment left.</span>'}
+      </div>`).join("") || '<p class="muted">No exit-survey responses yet.</p>';
+
+    return `
+      <div class="section"><h2>Question feedback</h2>${fbCards}</div>
+      <div class="section"><h2>Exit survey responses</h2>${surveyCards}</div>
+    `;
+  }
+
+  const TABS = { overview: renderOverview, students: renderStudents, feedback: renderFeedback };
+
+  async function showTab(name) {
+    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+    app.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      app.innerHTML = await TABS[name]();
+    } catch (err) {
+      app.innerHTML = '<div class="alert alert-error">Couldn\'t load this tab: ' + err.message + "</div>";
+    }
+  }
+
+  (async function init() {
+    const signedIn = await A72.isSignedIn();
+    if (!signedIn) { A72.redirectToSignIn("admin.html"); return; }
+    const instructor = await A72.isInstructor();
+    A72.renderAuthNav(document.getElementById("authNav"));
+    if (!instructor) {
+      app.innerHTML = '<div class="alert alert-error">This page is for instructors only.</div><a href="index.html" class="btn btn-secondary">Back to home</a>';
+      return;
+    }
+    document.getElementById("tabs").hidden = false;
+    document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
+    showTab("overview");
+  })();
+})();
+</script>
+</body>
+</html>

@@ -72,6 +72,46 @@ def finalize_after_stage_a(stage0_pct: float, stage_a_pct: float,
     return ADVANCED if composite >= FINAL_ADVANCED_THRESHOLD else BASIC
 
 
+GAP_THRESHOLD = 15.0  # domain-score spread beyond which we call out an imbalance
+
+
+def recommend(domain_scores: dict, track: str) -> str:
+    """A short, rule-based read on a student's profile for the instructor
+    dashboard -- not a model call, just the same kind of if/else this
+    module already uses for placement itself. Meant as a starting point
+    for a human reading a cohort report, not a final verdict.
+    """
+    linux = domain_scores.get("linux_cli")
+    windows = domain_scores.get("windows_cli")
+    overall = domain_scores.get("_overall", 0.0)
+
+    lines = []
+    if linux is not None and windows is not None:
+        gap = linux - windows
+        if abs(gap) < GAP_THRESHOLD:
+            lines.append("Roughly even performance across Linux and PowerShell.")
+        elif gap > 0:
+            lines.append(
+                f"Comfortable with Linux ({linux:.0f}%) but noticeably weaker in PowerShell "
+                f"({windows:.0f}%) -- targeted PowerShell/Windows practice recommended before Module 1."
+            )
+        else:
+            lines.append(
+                f"Comfortable with PowerShell ({windows:.0f}%) but noticeably weaker in Linux "
+                f"({linux:.0f}%) -- targeted Linux CLI practice recommended before Module 1."
+            )
+
+    if overall >= 85:
+        lines.append("Consistently strong overall -- a good candidate to move quickly, possibly a peer-mentor fit.")
+    elif overall < STAGE0_LOW_THRESHOLD:
+        lines.append("Below the general screening line across the board -- likely needs the full Basic-track support structure, not just one weak domain.")
+
+    if not lines:
+        lines.append(f"Placed {track} on composite score alone; no domain imbalance detected.")
+
+    return " ".join(lines)
+
+
 def score_domain_answers(answers: list[dict]) -> dict:
     """answers: [{domain, credit: float 0..1}, ...] -> {domain: pct, ..., "_overall": pct}
 

@@ -81,3 +81,43 @@ def query_prefix(pk: str, sk_prefix: str):
         KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(sk_prefix)
     )
     return _decimal_to_native(resp.get("Items", []))
+
+
+def delete_item(pk: str, sk: str):
+    table().delete_item(Key={"PK": pk, "SK": sk})
+
+
+def query_partition(pk: str) -> list[dict]:
+    """Every item under one partition key -- e.g. everything for one
+    student -- via Query (cheap, indexed) rather than Scan.
+    """
+    resp = table().query(KeyConditionExpression=Key("PK").eq(pk))
+    return _decimal_to_native(resp.get("Items", []))
+
+
+def scan_all(pk_prefix: str | None = None) -> list[dict]:
+    """Full-table scan, paginated. Fine at this scale (one cohort's worth
+    of students, a few thousand items at most) -- the admin dashboard is
+    the only caller, and it's not on any student-facing latency path. If
+    this table ever gets big enough for Scan to be a real cost/latency
+    concern, that's the point to add a GSI instead of reaching for this.
+    """
+    items = []
+    filter_expr = None
+    if pk_prefix:
+        from boto3.dynamodb.conditions import Attr
+        filter_expr = Attr("PK").begins_with(pk_prefix)
+
+    last_key = None
+    while True:
+        kwargs = {}
+        if filter_expr is not None:
+            kwargs["FilterExpression"] = filter_expr
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        resp = table().scan(**kwargs)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return _decimal_to_native(items)
