@@ -190,7 +190,7 @@
     if (!document.hidden && testActive) showBlockingModal(AWAY_MESSAGES, awayIdxRef);
   });
 
-  // Inactivity: no interaction with the terminal/answer field for 25s
+  // Inactivity: no interaction with the terminal/answer field for 60s
   // while the test is active -- purely a lighthearted nudge, not a
   // real cheating detector (and it doesn't touch scoring either way).
   let lastInteraction = Date.now();
@@ -202,7 +202,7 @@
     lastInteraction = Date.now();
     inactivityTimer = setInterval(() => {
       if (!testActive || inactivityModalOpen) return;
-      if (Date.now() - lastInteraction >= 25000) {
+      if (Date.now() - lastInteraction >= 60000) {
         inactivityModalOpen = true;
         const overlay = showBlockingModal(INACTIVITY_MESSAGES, inactivityIdxRef);
         overlay.querySelector("#modalCloseBtn").addEventListener("click", () => {
@@ -216,27 +216,27 @@
     clearInterval(inactivityTimer);
   }
 
-  // Milestone encouragement, shown every 4th correct answer -- kept
-  // deliberately generic (never mentions track/score) so it can't leak
-  // placement info, just morale.
+  // Milestone encouragement, shown every 5 answered questions (right or
+  // wrong -- this reaches a struggling student too, not just someone on
+  // a correct streak) so it shows up steadily "all the way through" the
+  // test, not just near the end. Blocking, same as the away/inactivity
+  // modals, so it actually registers rather than fading in the corner.
+  // Kept deliberately generic (never mentions track/score/correctness)
+  // so it can't leak placement info -- just morale.
   const MOTIVATION_MESSAGES = [
     "Not yet, but you'll be a hacker soon \u2014 keep pushing!",
-    "Nice streak \u2014 the shell's starting to feel like home.",
-    "Solid progress. Keep that momentum going.",
-    "You're getting the hang of this \u2014 onward.",
+    "Keep going \u2014 every command here is practice for the real thing.",
+    "You're doing exactly what you're supposed to: showing up and trying.",
+    "Stick with it \u2014 persistence beats speed in this field.",
+    "Halfway (or more) through the hard part just by continuing. Nice.",
+    "Real analysts aren't the fastest, they're the ones who don't quit. Onward.",
   ];
+  const motivationIdxRef = { value: -1 };
+  let answeredCount = 0;
   let correctCount = 0;
-  let motivationIdx = 0;
   function maybeShowMotivation() {
-    if (correctCount > 0 && correctCount % 4 === 0) {
-      const msg = MOTIVATION_MESSAGES[motivationIdx % MOTIVATION_MESSAGES.length];
-      motivationIdx++;
-      const toast = document.createElement("div");
-      toast.className = "away-toast";
-      toast.style.borderLeft = "4px solid var(--ok)";
-      toast.textContent = msg;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 4000);
+    if (answeredCount > 0 && answeredCount % 5 === 0) {
+      showBlockingModal(MOTIVATION_MESSAGES, motivationIdxRef);
     }
   }
 
@@ -499,8 +499,10 @@
           method: "POST",
           body: JSON.stringify({ itemId: item.itemId, domain: item.domain, answer }),
         });
-        if (res.lastAnswerCorrect) { correctCount++; maybeShowMotivation(); }
+        answeredCount++;
+        if (res.lastAnswerCorrect) correctCount++;
         await showAnswerFeedback(res.lastAnswerCorrect);
+        maybeShowMotivation();
         if (res.done) {
           stopTimer();
           showResult(sessionId);

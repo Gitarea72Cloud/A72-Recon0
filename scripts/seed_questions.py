@@ -403,118 +403,130 @@ def main():
     ]
 
     # ------------------------------------------------------------------
-    # Security concepts (5 + 5 + 5) -- free-text, no terminal. Short,
-    # unambiguous canonical answers so simple exact-match grading works.
+    # Security concepts (5 + 5 + 5) -- free-text, no terminal.
+    #
+    # Pitched at someone INITIATING in security, not someone already in
+    # the field: general tech/security literacy a curious beginner could
+    # plausibly know or reason out, not specialist jargon a placement
+    # test shouldn't assume (SIEM, OSINT, threat hunting, rules of
+    # engagement, grey hat, responsible disclosure, etc. are things the
+    # curriculum itself teaches -- testing for them here would penalize
+    # genuine beginners, not measure CLI/reasoning readiness).
+    #
+    # answer_key can be a string or a list of acceptable synonyms --
+    # free-text concept answers are inherently more ambiguous than a
+    # terminal's deterministic output, so a few of these accept more
+    # than one common phrasing.
     # ------------------------------------------------------------------
     red_team_items = [
         {
             "PK": "QUESTION#red_team", "SK": "ITEM#red-001",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for gathering information about a target using public sources (social media, public records, etc.) without directly touching their systems?",
-            "answer_key": "OSINT",
-            "hints": ["It's an acronym.", "It stands for a kind of intelligence gathered from openly available sources.", "OSINT = Open Source Intelligence."],
+            "prompt": "What's the common term for a fake email or message pretending to be from someone trustworthy, trying to trick you into clicking a bad link or giving up a password?",
+            "answer_key": "phishing",
+            "hints": ["It's named after a real-world activity involving bait.", "You've probably seen a warning about this in your own inbox.", "The answer is \"phishing\"."],
         },
         {
             "PK": "QUESTION#red_team", "SK": "ITEM#red-002",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for an email-based social engineering attack that tries to trick someone into revealing credentials or clicking a malicious link?",
-            "answer_key": "phishing",
-            "hints": ["It's named after a real-world activity involving bait.", "It's the most common initial-access technique in real attacks.", "The answer is \"phishing\"."],
+            "prompt": "What's the general term for malicious software — things like viruses, worms, and trojans all fall under this one word?",
+            "answer_key": "malware",
+            "hints": ["It's a blend of two words: \"malicious\" and \"software\".", "It's the umbrella term that viruses and trojans are both types of.", "The answer is \"malware\"."],
         },
         {
             "PK": "QUESTION#red_team", "SK": "ITEM#red-003",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What do we call a vulnerability that's exploited before the vendor has released a fix for it?",
-            "answer_key": "zero-day",
-            "hints": ["Think about how much warning the vendor had.", "The term describes having had zero days to prepare a patch.", "The answer is \"zero-day\"."],
+            "prompt": "What's the term for malicious software that locks or encrypts your files and demands payment to get them back?",
+            "answer_key": "ransomware",
+            "hints": ["Think about what the attacker is demanding.", "It's named directly after what it holds — for a payment.", "The answer is \"ransomware\"."],
         },
         {
             "PK": "QUESTION#red_team", "SK": "ITEM#red-004",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "In a penetration test, what's the common term for the document that authorizes and defines the boundaries of what testers are allowed to do?",
-            "answer_key": "rules of engagement",
-            "hints": ["It's a formal agreement signed before testing starts.", "Military-derived terminology is often used here.", "The answer is \"rules of engagement\"."],
+            "prompt": "What's the term for trying every possible password combination until one of them works?",
+            "answer_key": ["brute force", "brute-force"],
+            "hints": ["It's not clever or targeted — it's pure repetition.", "The name describes using raw force rather than a shortcut.", "The answer is \"brute force\"."],
         },
         {
             "PK": "QUESTION#red_team", "SK": "ITEM#red-005",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for moving from one compromised system to others within the same network to expand access?",
-            "answer_key": "lateral movement",
-            "hints": ["Think about the direction of movement once inside a network.", "It's not about escalating privilege, it's about spreading sideways.", "The answer is \"lateral movement\"."],
+            "prompt": "When a company legally hires someone to try to break into their own systems to find weaknesses before real attackers do, what's that activity generally called?",
+            "answer_key": ["penetration testing", "pen testing", "pentesting"],
+            "hints": ["It's abbreviated \"pen test\" for short.", "The tester is probing (\"penetrating\") the defenses on purpose, with permission.", "The answer is \"penetration testing\" (pen testing)."],
         },
     ]
     blue_team_items = [
         {
             "PK": "QUESTION#blue_team", "SK": "ITEM#blue-001",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the acronym for a centralized system that collects and correlates security logs from across an organization?",
-            "answer_key": "SIEM",
-            "hints": ["It's an acronym ending in \"Management\".", "It stands for Security Information and Event Management.", "The answer is \"SIEM\"."],
+            "prompt": "What's the common term for software that detects and blocks malicious programs on a computer?",
+            "answer_key": ["antivirus", "anti-virus"],
+            "hints": ["It's software most people have installed without thinking much about it.", "It's named directly after the threat it fights.", "The answer is \"antivirus\"."],
         },
         {
             "PK": "QUESTION#blue_team", "SK": "ITEM#blue-002",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the general term for a system that monitors network traffic and can alert on suspicious activity?",
-            "answer_key": "IDS",
-            "hints": ["It's an acronym.", "It stands for a system that detects intrusions.", "The answer is \"IDS\" (Intrusion Detection System)."],
+            "prompt": "What's the term for a security barrier that controls what network traffic is allowed in or out?",
+            "answer_key": "firewall",
+            "hints": ["Think of it as a protective wall between trusted and untrusted networks.", "The name literally describes a wall that stops fire (threats) from spreading.", "The answer is \"firewall\"."],
         },
         {
             "PK": "QUESTION#blue_team", "SK": "ITEM#blue-003",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for a step-by-step document defining exactly how to respond to a specific type of security incident?",
-            "answer_key": "playbook",
-            "hints": ["Think of a sports-team analogy for a pre-planned set of moves.", "Incident response teams often keep one for each incident type.", "The answer is \"playbook\"."],
+            "prompt": "What's the practice called where you regularly copy your data somewhere safe so you can recover it if something goes wrong?",
+            "answer_key": ["backup", "backups", "backing up"],
+            "hints": ["It's something you should be doing with your own photos and documents too.", "Ransomware attacks are a lot less scary if you have a recent one of these.", "The answer is \"backup\"."],
         },
         {
             "PK": "QUESTION#blue_team", "SK": "ITEM#blue-004",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for proactively searching a network for threats that have evaded existing security tools, rather than waiting for an alert?",
-            "answer_key": "threat hunting",
-            "hints": ["It's a proactive activity, not a reactive one.", "The name literally describes going out and looking for the threat.", "The answer is \"threat hunting\"."],
+            "prompt": "What's it called when logging in requires a second form of verification (like a code sent to your phone) in addition to your password?",
+            "answer_key": ["two-factor authentication", "2fa", "multi-factor authentication", "mfa"],
+            "hints": ["Most banking and email apps make you set this up now.", "It's often shortened to an acronym starting with \"2\" or \"M\".", "The answer is \"two-factor authentication\" (2FA) / \"multi-factor authentication\" (MFA)."],
         },
         {
             "PK": "QUESTION#blue_team", "SK": "ITEM#blue-005",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for the process of restoring systems and normal operations after a security incident?",
-            "answer_key": "recovery",
-            "hints": ["It's one of the standard phases of incident response.", "It comes after containment and eradication.", "The answer is \"recovery\"."],
+            "prompt": "What's the term for keeping software updated with the latest fixes for known security issues?",
+            "answer_key": ["patching", "patch", "patches", "updating"],
+            "hints": ["It's the reason your phone or laptop nags you to install updates.", "Security researchers find a hole, the vendor releases a fix, and you apply it — that action is called this.", "The answer is \"patching\"."],
         },
     ]
     grey_team_items = [
         {
             "PK": "QUESTION#grey_team", "SK": "ITEM#grey-001",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for a hacker who finds vulnerabilities without authorization but reports them instead of exploiting them maliciously?",
-            "answer_key": "grey hat",
-            "hints": ["It's a color-based term, sitting between two more extreme labels.", "It's neither fully \"white hat\" nor \"black hat\".", "The answer is \"grey hat\"."],
+            "prompt": "Is it legal to access someone else's computer system without their permission, even if you're \"just looking around\" and don't cause any damage?",
+            "answer_key": "no",
+            "hints": ["Think about whether good intentions change the legal answer.", "Permission is what makes access to a system lawful, not your intent.", "The answer is \"no\"."],
         },
         {
             "PK": "QUESTION#grey_team", "SK": "ITEM#grey-002",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for a structured program where organizations pay researchers for responsibly reported vulnerabilities?",
-            "answer_key": "bug bounty",
-            "hints": ["Companies like Google and Meta run these publicly.", "It's named after a reward for finding something specific.", "The answer is \"bug bounty\"."],
+            "prompt": "What word describes hacking skills used for good, protective purposes (with permission) rather than for harm?",
+            "answer_key": ["ethical", "ethical hacking"],
+            "hints": ["It's the same word used to describe morally right behavior in general.", "\"___ hacking\" is a widely used job title/skill area.", "The answer is \"ethical\" (as in \"ethical hacking\")."],
         },
         {
             "PK": "QUESTION#grey_team", "SK": "ITEM#grey-003",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for privately telling a vendor about a vulnerability and giving them time to fix it before publishing details?",
-            "answer_key": "responsible disclosure",
-            "hints": ["It's the opposite of publishing an exploit immediately.", "It's considered the ethical way to report a finding.", "The answer is \"responsible disclosure\"."],
+            "prompt": "What's it called when a company invites the public to find and report security bugs in exchange for a cash reward?",
+            "answer_key": "bug bounty",
+            "hints": ["Companies like Google and Meta run these publicly.", "It's named after a reward for finding something specific.", "The answer is \"bug bounty\"."],
         },
         {
             "PK": "QUESTION#grey_team", "SK": "ITEM#grey-004",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "Under most computer-crime laws, what's the single most important factor deciding whether accessing a system is legal or illegal?",
-            "answer_key": "authorization",
-            "hints": ["It's not about skill or intent, it's about permission.", "Having explicit permission (or not) from the system's owner is what matters.", "The answer is \"authorization\"."],
+            "prompt": "True or false: it's okay to test a company's security without asking first, as long as you don't cause any damage.",
+            "answer_key": "false",
+            "hints": ["Think back to the earlier question about accessing systems without permission.", "Good intentions and no damage still don't make it authorized.", "The answer is \"false\"."],
         },
         {
             "PK": "QUESTION#grey_team", "SK": "ITEM#grey-005",
             "checkpoint": "placement", "stage": "stage0", "type": "free-text",
-            "prompt": "What's the term for tools that can be used for both legitimate security testing and malicious attacks, depending on who's using them?",
-            "answer_key": "dual-use",
-            "hints": ["Think about tools like Nmap or Metasploit and who uses them.", "The term describes having two possible uses, good or bad.", "The answer is \"dual-use\"."],
+            "prompt": "What's the single most important thing you need before testing any system's security, even with good intentions?",
+            "answer_key": ["permission", "authorization"],
+            "hints": ["It's not about skill level.", "It's what turns \"hacking\" into \"authorized testing\".", "The answer is \"permission\" (authorization)."],
         },
     ]
 

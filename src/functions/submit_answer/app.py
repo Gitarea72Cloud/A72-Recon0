@@ -2,10 +2,18 @@
 
 Records one answer and returns either the next item in the current stage, or
 — once the stage is exhausted — the routing/finalization result:
-  Stage 0  < 55%               -> finalize Basic
+  Stage 0  < 55%               -> finalize (routing only; see below)
   Stage 0  55-70% (borderline) -> Stage B (short tie-break)
   Stage 0  >= 70%               -> Stage A (harder confirmation)
   Stage A / Stage B exhausted  -> ALWAYS finalize. No retries, no manual flag.
+
+The 55/70 thresholds above only gate ROUTING now -- how many questions a
+student sees. The actual Basic/Advanced call is decided by
+scoring.gaussian_track: a student's composite score compared against the
+distribution of everyone who has already completed placement in this
+cohort (rolling, norm-referenced), not a fixed absolute bar. See that
+function's docstring for the bootstrap behavior before enough students
+have finished.
 
 Stage completion is decided server-side (whether itembank.next_item finds
 another item), not by a client-supplied flag — nothing to spoof or get wrong
@@ -25,6 +33,16 @@ def response(status: int, body: dict):
 
 def canonical(s: str) -> str:
     return " ".join(s.strip().lower().split())
+
+
+def prior_composite_scores() -> list:
+    """Composite scores of every student who has already finalized in
+    this cohort -- the population gaussian_track compares against. The
+    current student's own RESULT# doesn't exist yet at call time, so
+    this naturally excludes them.
+    """
+    results = db.scan_all(pk_prefix="RESULT#")
+    return [r["composite_score"] for r in results if "composite_score" in r]
 
 
 def finalize(student: str, session_id: str, track: str, domain_scores: dict):
@@ -65,7 +83,16 @@ def lambda_handler(event, context):
 
     domain = body.get("domain", "unknown")
     question = db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}")
-    correct = bool(question) and canonical(submitted) == canonical(str(question.get("answer_key", "")))
+    correct = False
+    if question:
+        answer_key = question.get("answer_key", "")
+        # A question's answer_key can be one string or a list of
+        # acceptable synonyms (e.g. "MFA" / "2FA" / "two-factor
+        # authentication") -- free-text concept answers are inherently
+        # more ambiguous than a terminal's deterministic output.
+        acceptable = answer_key if isinstance(answer_key, list) else [answer_key]
+        submitted_canon = canonical(submitted)
+        correct = any(submitted_canon == canonical(str(k)) for k in acceptable)
 
     # Hints used is read from server-recorded state (set by get_hint), never
     # from the request -- the client can't just claim it used none.
@@ -101,7 +128,8 @@ def lambda_handler(event, context):
     if session["stage"] == "stage0":
         route = scoring.route_after_stage0(stage_pct)
         if route == "basic":
-            finalize(student, session_id, scoring.finalize_from_stage0_only(stage_pct), stage_scores)
+            track = scoring.gaussian_track(stage_pct, prior_composite_scores())
+            finalize(student, session_id, track, stage_scores)
             return response(200, {"done": True, "lastAnswerCorrect": correct})
 
         next_stage = "stageA" if route == "stageA" else "stageB"
@@ -120,18 +148,19 @@ def lambda_handler(event, context):
         # No Stage A/B content loaded yet (Phase 0 content work) -- finalize
         # from Stage 0 alone rather than leaving the session stuck with
         # nothing to serve. Remove once Stage A/B items exist.
-        track = scoring.ADVANCED if stage_pct >= scoring.STAGE0_HIGH_THRESHOLD else scoring.BASIC
+        track = scoring.gaussian_track(stage_pct, prior_composite_scores())
         finalize(student, session_id, track, stage_scores)
         return response(200, {"done": True, "lastAnswerCorrect": correct})
 
     if session["stage"] == "stageB":
-        track = scoring.finalize_after_stage_b(stage_pct)
+        track = scoring.gaussian_track(stage_pct, prior_composite_scores())
         finalize(student, session_id, track, stage_scores)
         return response(200, {"done": True, "lastAnswerCorrect": correct})
 
     if session["stage"] == "stageA":
         stage0_pct = float(session.get("stage0_score", 0.0))
-        track = scoring.finalize_after_stage_a(stage0_pct, stage_pct)
+        combined = scoring.combine_stage0_and_stage_a(stage0_pct, stage_pct)
+        track = scoring.gaussian_track(combined, prior_composite_scores())
         finalize(student, session_id, track, stage_scores)
         return response(200, {"done": True, "lastAnswerCorrect": correct})
 

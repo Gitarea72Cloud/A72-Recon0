@@ -3,16 +3,19 @@
 Decisions this encodes (see the project proposal for the full rationale):
   - Thresholds kept at 55% / 70% for Cohort 1 (Oct 2026); recalibrate from
     real data before Cohort 2 (Jan 2027) — this is the one place to change
-    them.
+    them. They still gate ROUTING (how many questions a student sees --
+    Stage 0 alone, or a confirmation/tie-break round), just not the final
+    Basic/Advanced call any more -- see gaussian_track below.
   - Stage A is always the last step: pass or fail, the combined score
     decides Basic vs. Advanced. No retry, no manual override.
   - v1 domains are Linux-only (see DOMAINS below). Windows/AD stays
     conceptual/free-text until the windows-exec engine exists.
 """
+import statistics
 
 STAGE0_LOW_THRESHOLD = 55.0   # below this -> straight to Basic
 STAGE0_HIGH_THRESHOLD = 70.0  # at/above this -> Stage A
-FINAL_ADVANCED_THRESHOLD = 70.0  # composite Stage0+StageA score needed to land Advanced
+FINAL_ADVANCED_THRESHOLD = 70.0  # bootstrap-only cutoff, see gaussian_track
 
 DOMAINS = [
     "linux_cli",
@@ -53,26 +56,44 @@ def route_after_stage0(stage0_pct: float) -> str:
     return "stageB"
 
 
-def finalize_from_stage0_only(stage0_pct: float) -> str:
-    """A student routed straight to Basic from Stage 0 — no further stages."""
-    return BASIC
-
-
-def finalize_after_stage_b(stage_b_pct: float) -> str:
-    """Stage B is itself the tie-break: pass/fail on the short round alone."""
-    return ADVANCED if stage_b_pct >= 50.0 else BASIC
-
-
-def finalize_after_stage_a(stage0_pct: float, stage_a_pct: float,
-                            stage0_weight: float = 0.4, stage_a_weight: float = 0.6) -> str:
-    """Stage A is always final: combine both scores and decide once.
-
-    Weighted toward Stage A (harder, more discriminating) but Stage 0 still
-    counts, so a strong screening score provides some cushion. Whatever the
-    outcome, this is the last stage — no extra round, no manual flag.
+def combine_stage0_and_stage_a(stage0_pct: float, stage_a_pct: float,
+                                stage0_weight: float = 0.4, stage_a_weight: float = 0.6) -> float:
+    """Stage A is always final: weighted toward Stage A (harder, more
+    discriminating) but Stage 0 still counts, so a strong screening score
+    provides some cushion. Feeds into gaussian_track below, same as any
+    other composite score.
     """
-    composite = stage0_pct * stage0_weight + stage_a_pct * stage_a_weight
-    return ADVANCED if composite >= FINAL_ADVANCED_THRESHOLD else BASIC
+    return stage0_pct * stage0_weight + stage_a_pct * stage_a_weight
+
+
+MIN_COHORT_SAMPLE = 5  # fewer prior completions than this -> statistics aren't meaningful yet
+
+
+def gaussian_track(score: float, prior_scores: list[float]) -> str:
+    """Basic vs. Advanced by comparing this student's score to the
+    distribution of everyone who has *already* completed placement in
+    this cohort -- a rolling bell curve, not a fixed absolute bar. At or
+    above the running mean -> Advanced, below -> Basic.
+
+    This is deliberately norm-referenced: a cohort that all scores low
+    still splits roughly down the middle, because placement here means
+    "relative to peers," not "cleared an absolute bar." That's the
+    explicit tradeoff of grading on a curve, not an oversight.
+
+    Needs enough prior data to say anything -- with fewer than
+    MIN_COHORT_SAMPLE completions, or zero spread in the sample (every
+    prior score identical), falls back to the original fixed high
+    threshold so the first few students in a cohort still get a sensible
+    placement instead of an arbitrary one.
+    """
+    if len(prior_scores) < MIN_COHORT_SAMPLE:
+        return ADVANCED if score >= STAGE0_HIGH_THRESHOLD else BASIC
+    mean = statistics.fmean(prior_scores)
+    stdev = statistics.pstdev(prior_scores)
+    if stdev == 0:
+        return ADVANCED if score >= STAGE0_HIGH_THRESHOLD else BASIC
+    z = (score - mean) / stdev
+    return ADVANCED if z >= 0 else BASIC
 
 
 GAP_THRESHOLD = 15.0  # domain-score spread beyond which we call out an imbalance
