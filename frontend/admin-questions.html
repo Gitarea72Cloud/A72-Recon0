@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Question bank — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .adminwrap { max-width: 900px; margin: 0 auto; padding: 32px 24px 100px; }
+  .pagehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .pagehead h1 { font-size: 24px; margin: 0; }
+
+  table.datatable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.datatable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.datatable td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tblwrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; overflow-x: auto; margin-bottom: 24px; }
+  .row-actions a { font-size: 12.5px; margin-right: 10px; }
+  .row-actions a.danger { color: var(--danger); }
+
+  .genbox { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 26px; }
+  .genbox h3 { margin: 0 0 4px; font-size: 15px; }
+  .genbox p.muted { margin: 0 0 14px; font-size: 13px; }
+  .gen-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .gen-row select, .gen-row input, textarea.field {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink);
+    padding: 9px 11px; border-radius: 8px; font-size: 13.5px; font-family: inherit;
+  }
+  textarea.field { min-height: 60px; resize: vertical; }
+
+  .qform { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 26px; }
+  .qform .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .qform label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  .qform input, .qform select, .qform textarea {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink);
+    padding: 9px 11px; border-radius: 8px; font-size: 13.5px; font-family: inherit;
+  }
+  .qform textarea { min-height: 50px; resize: vertical; }
+  .files-editor { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 12px; }
+  .file-row { display: grid; grid-template-columns: 160px 1fr 32px; gap: 8px; margin-bottom: 8px; }
+  .file-row input, .file-row textarea { font-size: 12.5px; }
+  .file-row button { background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html">Help</a>
+    <a href="admin.html">Admin</a>
+    <a href="admin-questions.html" class="active">Questions</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="adminwrap">
+    <div class="pagehead">
+      <h1>Question bank</h1>
+      <button class="btn btn-primary" id="newBtn">+ New question</button>
+    </div>
+    <div id="app"><p class="muted">Loading…</p></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const app = document.getElementById("app");
+  const DOMAINS = ["linux_cli", "windows_cli", "red_team", "blue_team", "grey_team"];
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+
+  async function renderList() {
+    const data = await A72.apiFetch("/admin/questions");
+    const rows = data.questions.map((q) => `
+      <tr>
+        <td class="mono">${q.domain}</td>
+        <td class="mono">${q.itemId}</td>
+        <td>${q.type}</td>
+        <td>${esc(q.prompt).slice(0, 70)}${q.prompt.length > 70 ? "…" : ""}</td>
+        <td class="row-actions">
+          <a href="#" data-edit="${q.domain}/${q.itemId}">Edit</a>
+          <a href="#" class="danger" data-delete="${q.domain}/${q.itemId}">Delete</a>
+        </td>
+      </tr>`).join("");
+    app.innerHTML = `
+      <div class="tblwrap"><table class="datatable">
+        <thead><tr><th>Domain</th><th>Item</th><th>Type</th><th>Prompt</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted">No questions yet.</td></tr>'}</tbody>
+      </table></div>
+    `;
+    app.querySelectorAll("[data-edit]").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const [domain, itemId] = a.dataset.edit.split("/");
+      renderForm({ domain, itemId });
+    }));
+    app.querySelectorAll("[data-delete]").forEach((a) => a.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const [domain, itemId] = a.dataset.delete.split("/");
+      if (!confirm(`Delete ${domain}/${itemId}? This can't be undone.`)) return;
+      await A72.apiFetch(`/admin/questions/${domain}/${itemId}`, { method: "DELETE" });
+      renderList();
+    }));
+  }
+
+  function filesEditorHtml(files) {
+    const entries = Object.entries(files || {});
+    const rows = (entries.length ? entries : [["", ""]]).map(([name, content]) => `
+      <div class="file-row">
+        <input class="f-name" placeholder="filename.ext" value="${esc(name)}">
+        <textarea class="f-content" placeholder="file content" rows="2">${esc(content)}</textarea>
+        <button type="button" class="f-remove" title="Remove file">&times;</button>
+      </div>`).join("");
+    return `<div class="files-editor" id="filesEditor">${rows}</div><button type="button" class="btn btn-secondary" id="addFileBtn" style="font-size:12.5px;padding:6px 12px">+ Add file</button>`;
+  }
+
+  function wireFilesEditor() {
+    document.getElementById("addFileBtn").addEventListener("click", () => {
+      const div = document.getElementById("filesEditor");
+      const row = document.createElement("div");
+      row.className = "file-row";
+      row.innerHTML = `<input class="f-name" placeholder="filename.ext"><textarea class="f-content" placeholder="file content" rows="2"></textarea><button type="button" class="f-remove">&times;</button>`;
+      div.appendChild(row);
+      row.querySelector(".f-remove").addEventListener("click", () => row.remove());
+    });
+    document.querySelectorAll(".f-remove").forEach((b) => b.addEventListener("click", () => b.closest(".file-row").remove()));
+  }
+
+  function collectFiles() {
+    const files = {};
+    document.querySelectorAll("#filesEditor .file-row").forEach((row) => {
+      const name = row.querySelector(".f-name").value.trim();
+      const content = row.querySelector(".f-content").value;
+      if (name) files[name] = content;
+    });
+    return files;
+  }
+
+  function renderForm(existing) {
+    const isEdit = !!(existing && existing.domain && existing.itemId && existing.prompt !== undefined);
+    const q = existing || {};
+    const isTerminal = q.type ? q.type === "terminal" : true;
+
+    app.innerHTML = `
+      <div class="genbox">
+        <h3>Draft with AI</h3>
+        <p class="muted">Claude Haiku 4.5 via Bedrock drafts the question; any exact number/hash/decode value is computed by our own code afterward, not trusted from the model. Always review before saving. <span id="budgetLine"></span></p>
+        <div class="gen-row">
+          <select id="genDomain">${DOMAINS.map((d) => `<option value="${d}">${d}</option>`).join("")}</select>
+          <select id="genType"><option value="terminal">terminal</option><option value="free-text">free-text</option></select>
+        </div>
+        <textarea id="genTopic" class="field" placeholder="Rough idea, e.g. &quot;check whether students know how to count characters in a decoded file&quot;"></textarea>
+        <div id="genError"></div>
+        <button class="btn btn-secondary" id="genBtn" style="margin-top:10px">Generate with AI</button>
+      </div>
+
+      <form class="qform" id="qform">
+        <h3 style="margin-top:0">${isEdit ? "Edit" : "New"} question</h3>
+        <div class="field-row">
+          <div><label>Domain</label>
+            <select id="fDomain" ${isEdit ? "disabled" : ""}>${DOMAINS.map((d) => `<option value="${d}" ${d === q.domain ? "selected" : ""}>${d}</option>`).join("")}</select>
+          </div>
+          <div><label>Item ID</label><input id="fItemId" value="${esc(q.itemId || "")}" ${isEdit ? "disabled" : ""} placeholder="e.g. linux-011"></div>
+        </div>
+        <div class="field-row">
+          <div><label>Type</label>
+            <select id="fType">
+              <option value="terminal" ${isTerminal ? "selected" : ""}>terminal</option>
+              <option value="free-text" ${!isTerminal ? "selected" : ""}>free-text</option>
+            </select>
+          </div>
+          <div><label>Answer (comma-separate for multiple acceptable answers)</label>
+            <input id="fAnswer" value="${esc(Array.isArray(q.answer_key) ? q.answer_key.join(", ") : (q.answer_key || ""))}">
+          </div>
+        </div>
+        <label>Prompt</label>
+        <textarea id="fPrompt" rows="2">${esc(q.prompt || "")}</textarea>
+        <label style="margin-top:10px;display:block">Hints (3, progressively more specific)</label>
+        <input id="fHint1" placeholder="Hint 1 -- a nudge" value="${esc((q.hints || [])[0] || "")}" style="margin-bottom:6px">
+        <input id="fHint2" placeholder="Hint 2 -- names the command/concept" value="${esc((q.hints || [])[1] || "")}" style="margin-bottom:6px">
+        <input id="fHint3" placeholder="Hint 3 -- near-complete answer" value="${esc((q.hints || [])[2] || "")}" style="margin-bottom:12px">
+        <div id="terminalFields" ${isTerminal ? "" : "hidden"}>
+          <label>Scenario files</label>
+          ${filesEditorHtml((q.scenario || {}).files)}
+        </div>
+        <div id="formError" style="margin-top:12px"></div>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <button type="submit" class="btn btn-primary">${isEdit ? "Save changes" : "Create question"}</button>
+          <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+        </div>
+      </form>
+    `;
+    wireFilesEditor();
+
+    document.getElementById("fType").addEventListener("change", (e) => {
+      document.getElementById("terminalFields").hidden = e.target.value !== "terminal";
+    });
+    document.getElementById("cancelBtn").addEventListener("click", renderList);
+
+    document.getElementById("genBtn").addEventListener("click", async () => {
+      const domain = document.getElementById("genDomain").value;
+      const type = document.getElementById("genType").value;
+      const topic = document.getElementById("genTopic").value.trim();
+      const errEl = document.getElementById("genError");
+      const btn = document.getElementById("genBtn");
+      errEl.innerHTML = "";
+      if (!topic) { errEl.innerHTML = '<div class="alert alert-error">Give it a rough topic/idea first.</div>'; return; }
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+      try {
+        const res = await A72.apiFetch("/admin/questions/generate", {
+          method: "POST", body: JSON.stringify({ domain, type, topic }),
+        });
+        document.getElementById("budgetLine").textContent =
+          ` (AI budget used so far: $${res.budgetSpentUsd.toFixed(4)} of $${res.budgetMaxUsd})`;
+        renderForm(res.draft);
+      } catch (err) {
+        errEl.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate with AI";
+      }
+    });
+
+    document.getElementById("qform").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById("formError");
+      errEl.innerHTML = "";
+      const type = document.getElementById("fType").value;
+      const answerRaw = document.getElementById("fAnswer").value.trim();
+      const answerParts = answerRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      const body = {
+        domain: document.getElementById("fDomain").value,
+        itemId: document.getElementById("fItemId").value.trim(),
+        type,
+        prompt: document.getElementById("fPrompt").value.trim(),
+        answer_key: answerParts.length > 1 ? answerParts : (answerParts[0] || ""),
+        hints: [document.getElementById("fHint1").value.trim(), document.getElementById("fHint2").value.trim(), document.getElementById("fHint3").value.trim()],
+      };
+      if (type === "terminal") body.scenario = { files: collectFiles() };
+
+      try {
+        if (isEdit) {
+          await A72.apiFetch(`/admin/questions/${q.domain}/${q.itemId}`, { method: "PUT", body: JSON.stringify(body) });
+        } else {
+          await A72.apiFetch("/admin/questions", { method: "POST", body: JSON.stringify(body) });
+        }
+        renderList();
+      } catch (err) {
+        errEl.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+      }
+    });
+  }
+
+  document.getElementById("newBtn").addEventListener("click", () => renderForm(null));
+
+  (async function init() {
+    const signedIn = await A72.isSignedIn();
+    if (!signedIn) { A72.redirectToSignIn("admin-questions.html"); return; }
+    const instructor = await A72.isInstructor();
+    A72.renderAuthNav(document.getElementById("authNav"));
+    if (!instructor) {
+      app.innerHTML = '<div class="alert alert-error">This page is for instructors only.</div><a href="index.html" class="btn btn-secondary">Back to home</a>';
+      document.getElementById("newBtn").hidden = true;
+      return;
+    }
+    try {
+      await renderList();
+    } catch (err) {
+      app.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+    }
+  })();
+})();
+</script>
+</body>
+</html>

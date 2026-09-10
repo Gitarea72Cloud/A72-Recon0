@@ -251,6 +251,7 @@ Resources:
       Environment:
         Variables:
           USER_POOL_ID: !Ref UserPool
+          BEDROCK_MAX_SPEND_USD: "20"
       Layers:
         - !Ref CommonLayer
       Policies:
@@ -261,6 +262,17 @@ Resources:
               Action:
                 - cognito-idp:ListUsers
               Resource: !GetAtt UserPool.Arn
+            - Sid: BedrockQuestionGeneration
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                # The inference profile is what gets invoked; Bedrock also
+                # requires permission on the underlying foundation model
+                # ARN(s) it routes to (the "EU" profile can land in any
+                # EU region), scoped to this one model, not all of Bedrock.
+                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0
+                - !Sub arn:aws:bedrock:eu-*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
       Events:
         Questions:
           Type: HttpApi
@@ -268,6 +280,36 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /admin/questions
             Method: POST
+        QuestionsList:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/questions
+            Method: GET
+        QuestionsGenerate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/questions/generate
+            Method: POST
+        QuestionGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/questions/{domain}/{itemId}
+            Method: GET
+        QuestionUpdate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/questions/{domain}/{itemId}
+            Method: PUT
+        QuestionDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/questions/{domain}/{itemId}
+            Method: DELETE
         Results:
           Type: HttpApi
           Properties:

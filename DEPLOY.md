@@ -101,7 +101,44 @@ gh variable set CLOUDFRONT_DISTRIBUTION_ID --body "<distribution-id>"
 `s3:GetObject` scoped to that exact distribution's ARN via
 `AWS:SourceArn`, nothing broader.
 
-## 3. Push to main
+## 3. One-time: enable Bedrock for AI-assisted question drafting
+
+The admin question bank's "Generate with AI" button (`POST
+/admin/questions/generate`) calls Claude Haiku 4.5 via Bedrock. Two
+one-time account-side steps, both console-only — no CLI/API path exists
+for either:
+
+1. **Accept Anthropic's model-access agreement.** Bedrock requires a
+   "use case" form (an opaque, undocumented blob via the CLI's
+   `put-use-case-for-model-access --form-data`) submitted before
+   `create-foundation-model-agreement` will succeed — deliberately not
+   scriptable here since it asks for a genuine business justification.
+   Go to the [Bedrock console](https://console.aws.amazon.com/bedrock/)
+   → **Model access** → find **Anthropic** → **Request model access** →
+   fill in the short form → submit. Normally instant for Claude models.
+2. **Deploy the cost-guardrail budget** (`bootstrap/bedrock-cost-budget.yaml`)
+   to **us-east-1 specifically** — `AWS::Budgets::Budget` is one of the
+   CloudFormation resource types only recognized in that region (a
+   long-standing Billing/Cost Management quirk), even though the budget
+   itself tracks spend account-wide:
+   ```bash
+   aws cloudformation deploy \
+     --template-file bootstrap/bedrock-cost-budget.yaml \
+     --stack-name a72-recon0-bedrock-cost-budget \
+     --region us-east-1 \
+     --parameter-overrides Stage=dev MonthlyBudgetUsd=20 AlertEmail=you@example.com
+   ```
+   This only emails at ~50%/100% of the cap (AWS Budgets/Cost Explorer
+   data lags real spend by up to ~24h, so it can't be a hard stop). The
+   actual instant hard stop lives in `AdminFunction` itself
+   (`BEDROCK_MAX_SPEND_USD` env var, default 20): it tracks real spend
+   from each call's actual token usage in DynamoDB
+   (`PK=BEDROCK_USAGE`/`SK=QUESTION_GEN`) and refuses further Bedrock
+   calls once the running total hits the cap — no billing-data lag
+   involved, since it's computed directly from what Bedrock's own
+   response says it billed.
+
+## 4. Push to main
 
 Every push to `main` now runs `.github/workflows/deploy.yml`: `sam build`,
 `sam deploy` to `eu-south-2`, syncs `frontend/` to the resulting S3
@@ -109,7 +146,7 @@ bucket, then invalidates the CloudFront cache (skipped automatically if
 `CLOUDFRONT_DISTRIBUTION_ID` isn't set yet). Watch it under the repo's
 **Actions** tab.
 
-## 4. Smoke-test it
+## 5. Smoke-test it
 
 ```bash
 aws cloudformation describe-stacks --stack-name a72-recon0-dev \

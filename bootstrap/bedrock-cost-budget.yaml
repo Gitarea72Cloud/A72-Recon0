@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  One-time, account-side cost guardrail for the admin question-generation
+  feature's Bedrock usage (see src/functions/admin/app.py). MUST be
+  deployed to us-east-1 specifically -- AWS::Budgets::Budget is one of
+  the CloudFormation resource types that's only recognized in that
+  region (a long-standing quirk: Billing/Cost Management resources are
+  historically us-east-1-only), even though the budget itself tracks
+  spend account-wide, not per-region.
+
+  This is the notification half only (email at ~50%/100% of the cap) --
+  AWS Budgets/Cost Explorer data lags real spend by up to ~24h, so it
+  can't be the actual hard stop. The instant hard stop (refusing further
+  Bedrock calls once real, per-call tracked spend hits
+  BEDROCK_MAX_SPEND_USD) lives in the AdminFunction Lambda itself,
+  computed from each call's real token usage.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 20
+    Description: >
+      USD (what AWS Budgets bills in) approximating the requested cap --
+      close enough at these amounts to not need a live FX rate.
+  AlertEmail:
+    Type: String
+    Default: morillasfj@gmail.com
+
+Resources:
+  BedrockQuestionGenBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub a72-recon0-${Stage}-bedrock-question-gen
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+        CostFilters:
+          Service:
+            - "Amazon Bedrock"
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail

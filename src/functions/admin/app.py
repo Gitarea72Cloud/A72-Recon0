@@ -6,28 +6,50 @@ every route in this file reads or mutates data across ALL students, not
 just the caller's own.
 
 Routes (all through this one function, branched on event["routeKey"],
-matching the one-function-many-routes pattern already used for the
+matching the one-function-many-routes pattern already used since the
 original /admin/questions + /admin/results pair):
-  GET  /admin/results                     cohort-wide dashboard metrics
-  GET  /admin/students                    one row per student who has
-                                            started or finished placement
-  GET  /admin/students/{studentId}        full profile for one student
-  POST /admin/students/{studentId}/reset  delete a student's placement
-                                            session so they can retake it
-  GET  /admin/feedback                    question feedback + exit survey
-                                            responses submitted by students
-  POST /admin/questions                   question-bank upload -- still
-                                            not built, Phase 2 on the roadmap
+  GET    /admin/results                     cohort-wide dashboard metrics
+  GET    /admin/students                    one row per student who has
+                                              started or finished placement
+  GET    /admin/students/{studentId}        full profile for one student
+  POST   /admin/students/{studentId}/reset  delete a student's placement
+                                              session so they can retake it
+  GET    /admin/feedback                    question feedback + exit survey
+                                              responses submitted by students
+  GET    /admin/questions                   full question bank (answer_key
+                                              and hints included -- this is
+                                              the one place that's true)
+  POST   /admin/questions                   create a question
+  GET    /admin/questions/{domain}/{itemId} one question, full detail
+  PUT    /admin/questions/{domain}/{itemId} update a question
+  DELETE /admin/questions/{domain}/{itemId} delete a question
+  POST   /admin/questions/generate          AI-assisted draft (Bedrock,
+                                              Claude Haiku 4.5) -- returns a
+                                              draft, never writes to the
+                                              question bank itself; see
+                                              common/question_gen.py for the
+                                              why-Haiku-and-not-trusted-math
+                                              design notes
 """
 import json
 import os
 import boto3
-from common import db, auth, scoring
+from common import db, auth, scoring, question_gen
 
 HEADERS = {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
 
 _cognito = boto3.client("cognito-idp")
 _USER_POOL_ID = os.environ.get("USER_POOL_ID")
+_bedrock = boto3.client("bedrock-runtime")
+_BEDROCK_MODEL_ID = os.environ.get(
+    "BEDROCK_MODEL_ID", "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+)
+# Bedrock EU inference-profile rate card for Haiku 4.5, $/token (from
+# list-foundation-model-agreement-offers) -- partner pricing, not the
+# same as Anthropic's direct API rates.
+_BEDROCK_INPUT_USD_PER_TOKEN = 1.10 / 1_000_000
+_BEDROCK_OUTPUT_USD_PER_TOKEN = 5.50 / 1_000_000
+_BEDROCK_MAX_SPEND_USD = float(os.environ.get("BEDROCK_MAX_SPEND_USD", "20"))
 
 
 def response(status: int, body: dict):
@@ -218,12 +240,187 @@ def feedback_list():
     return response(200, {"itemFeedback": feedback, "surveys": surveys})
 
 
+def _question_view(item: dict) -> dict:
+    """Full detail for the author's own view -- unlike items.public_item,
+    answer_key/hints/scenario are exactly what an author needs to see to
+    edit a question. Never reuse this for a student-facing response.
+    """
+    return {
+        "domain": item["PK"].replace("QUESTION#", ""),
+        "itemId": item["SK"].replace("ITEM#", ""),
+        "type": item.get("type"),
+        "prompt": item.get("prompt"),
+        "answer_key": item.get("answer_key"),
+        "hints": item.get("hints", []),
+        "scenario": item.get("scenario"),
+        "checkpoint": item.get("checkpoint", "placement"),
+        "stage": item.get("stage", "stage0"),
+    }
+
+
+def questions_list():
+    items = db.scan_all(pk_prefix="QUESTION#")
+    rows = [_question_view(i) for i in items]
+    rows.sort(key=lambda r: (r["domain"], r["itemId"]))
+    return response(200, {"questions": rows})
+
+
+def question_get(domain: str, item_id: str):
+    item = db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}")
+    if not item:
+        return response(404, {"error": "question not found"})
+    return response(200, _question_view(item))
+
+
+def _validate_question_body(body: dict) -> str | None:
+    if not body.get("domain") or not body.get("itemId"):
+        return "domain and itemId are required"
+    if body.get("type") not in ("terminal", "free-text"):
+        return "type must be 'terminal' or 'free-text'"
+    if not body.get("prompt"):
+        return "prompt is required"
+    answer_key = body.get("answer_key")
+    if not answer_key or (isinstance(answer_key, list) and not any(answer_key)):
+        return "answer_key is required (a string, or a list of acceptable synonyms)"
+    hints = body.get("hints", [])
+    if not isinstance(hints, list) or len(hints) not in (0, 3):
+        return "hints must be a list of exactly 3 strings (or omitted)"
+    if body["type"] == "terminal":
+        files = (body.get("scenario") or {}).get("files")
+        if not files:
+            return "terminal questions need scenario.files"
+    return None
+
+
+def question_create(body: dict):
+    err = _validate_question_body(body)
+    if err:
+        return response(400, {"error": err})
+    domain, item_id = body["domain"], body["itemId"]
+    if db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}"):
+        return response(409, {"error": f"{domain}/{item_id} already exists -- use PUT to edit it"})
+    item = {
+        "PK": f"QUESTION#{domain}", "SK": f"ITEM#{item_id}",
+        "checkpoint": body.get("checkpoint", "placement"),
+        "stage": body.get("stage", "stage0"),
+        "type": body["type"], "prompt": body["prompt"],
+        "answer_key": body["answer_key"], "hints": body.get("hints", []),
+    }
+    if body["type"] == "terminal":
+        item["scenario"] = body["scenario"]
+    db.put_item(item)
+    return response(201, _question_view(item))
+
+
+def question_update(domain: str, item_id: str, body: dict):
+    if not db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}"):
+        return response(404, {"error": "question not found"})
+    body = {**body, "domain": domain, "itemId": item_id}
+    err = _validate_question_body(body)
+    if err:
+        return response(400, {"error": err})
+    item = {
+        "PK": f"QUESTION#{domain}", "SK": f"ITEM#{item_id}",
+        "checkpoint": body.get("checkpoint", "placement"),
+        "stage": body.get("stage", "stage0"),
+        "type": body["type"], "prompt": body["prompt"],
+        "answer_key": body["answer_key"], "hints": body.get("hints", []),
+    }
+    if body["type"] == "terminal":
+        item["scenario"] = body["scenario"]
+    db.put_item(item)
+    return response(200, _question_view(item))
+
+
+def question_delete(domain: str, item_id: str):
+    if not db.get_item(f"QUESTION#{domain}", f"ITEM#{item_id}"):
+        return response(404, {"error": "question not found"})
+    db.delete_item(f"QUESTION#{domain}", f"ITEM#{item_id}")
+    return response(200, {"ok": True})
+
+
+_USAGE_PK, _USAGE_SK = "BEDROCK_USAGE", "QUESTION_GEN"
+
+
+def _bedrock_spend_so_far() -> float:
+    usage = db.get_item(_USAGE_PK, _USAGE_SK)
+    return (usage or {}).get("spendUsd", 0.0)
+
+
+def _record_bedrock_spend(input_tokens: int, output_tokens: int) -> float:
+    """Atomically accumulates real spend from this call's actual token
+    usage (never estimated ahead of time) and returns the new running
+    total. This is the enforcement path for BEDROCK_MAX_SPEND_USD -- it's
+    instant, unlike AWS Budgets/Cost Explorer data which lags real spend
+    by up to ~24h and is only used here for the email notifications.
+    """
+    cost = input_tokens * _BEDROCK_INPUT_USD_PER_TOKEN + output_tokens * _BEDROCK_OUTPUT_USD_PER_TOKEN
+    updated = db.update_item(
+        _USAGE_PK, _USAGE_SK,
+        "ADD spendUsd :c, callCount :one",
+        {":c": round(cost, 6), ":one": 1},
+    )
+    return updated.get("spendUsd", cost)
+
+
+def question_generate(body: dict):
+    domain = body.get("domain")
+    qtype = body.get("type")
+    topic = (body.get("topic") or "").strip()
+    if not domain or qtype not in ("terminal", "free-text") or not topic:
+        return response(400, {"error": "domain, type ('terminal'|'free-text'), and topic are required"})
+    if qtype == "terminal" and domain not in ("linux_cli", "windows_cli"):
+        return response(400, {"error": "terminal questions are only supported for linux_cli or windows_cli"})
+
+    spent = _bedrock_spend_so_far()
+    if spent >= _BEDROCK_MAX_SPEND_USD:
+        return response(402, {
+            "error": f"AI question-generation budget reached (${spent:.2f} of ${_BEDROCK_MAX_SPEND_USD:.2f}). "
+                     f"Write this question by hand, or raise BEDROCK_MAX_SPEND_USD to continue using AI drafting.",
+        })
+
+    system_prompt, user_message = question_gen.build_messages(domain, qtype, topic)
+    try:
+        # Bounded max_tokens: one question's JSON is small, and this
+        # caps spend per click regardless of what the model tries to write.
+        resp = _bedrock.converse(
+            modelId=_BEDROCK_MODEL_ID,
+            system=[{"text": system_prompt}],
+            messages=[{"role": "user", "content": [{"text": user_message}]}],
+            inferenceConfig={"maxTokens": 1200, "temperature": 0.7},
+        )
+        raw_text = resp["output"]["message"]["content"][0]["text"]
+        usage = resp.get("usage", {})
+        running_spend = _record_bedrock_spend(usage.get("inputTokens", 0), usage.get("outputTokens", 0))
+    except Exception as e:
+        return response(502, {"error": f"Bedrock call failed: {e}"})
+
+    try:
+        draft = question_gen.resolve_draft(raw_text, domain, qtype)
+    except ValueError as e:
+        return response(422, {"error": f"model draft wasn't usable, try again: {e}", "raw": raw_text})
+
+    existing = db.query_prefix(f"QUESTION#{domain}", "ITEM#")
+    draft["itemId"] = question_gen.next_item_id(domain, [i["SK"].replace("ITEM#", "") for i in existing])
+    return response(200, {
+        "draft": draft,
+        "budgetSpentUsd": round(running_spend, 4),
+        "budgetMaxUsd": _BEDROCK_MAX_SPEND_USD,
+    })
+
+
 def lambda_handler(event, context):
     if not auth.is_instructor(event):
         return response(403, {"error": "instructors only"})
 
     route = event.get("routeKey", "")
     path_params = event.get("pathParameters") or {}
+    body = {}
+    if event.get("body"):
+        try:
+            body = json.loads(event["body"])
+        except (TypeError, ValueError):
+            return response(400, {"error": "invalid JSON body"})
 
     if route == "GET /admin/results":
         return dashboard()
@@ -235,7 +432,17 @@ def lambda_handler(event, context):
         return reset_student(path_params.get("studentId"))
     if route == "GET /admin/feedback":
         return feedback_list()
+    if route == "GET /admin/questions":
+        return questions_list()
     if route == "POST /admin/questions":
-        return response(501, {"error": "question-bank upload not implemented yet"})
+        return question_create(body)
+    if route == "POST /admin/questions/generate":
+        return question_generate(body)
+    if route == "GET /admin/questions/{domain}/{itemId}":
+        return question_get(path_params.get("domain"), path_params.get("itemId"))
+    if route == "PUT /admin/questions/{domain}/{itemId}":
+        return question_update(path_params.get("domain"), path_params.get("itemId"), body)
+    if route == "DELETE /admin/questions/{domain}/{itemId}":
+        return question_delete(path_params.get("domain"), path_params.get("itemId"))
 
     return response(404, {"error": f"unknown admin route: {route}"})

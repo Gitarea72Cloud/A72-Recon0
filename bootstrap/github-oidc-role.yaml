@@ -209,6 +209,24 @@ Resources:
                   - iam:TagRole
                 Resource:
                   - !Sub arn:aws:iam::${AWS::AccountId}:role/a72-recon0-*
+              - Sid: BedrockCostBudget
+                Effect: Allow
+                Action:
+                  - budgets:CreateBudget
+                  - budgets:DescribeBudget
+                  - budgets:DescribeBudgets
+                  - budgets:UpdateBudget
+                  - budgets:DeleteBudget
+                  - budgets:CreateNotification
+                  - budgets:DeleteNotification
+                  - budgets:UpdateNotification
+                  - budgets:CreateSubscriber
+                  - budgets:DeleteSubscriber
+                  - budgets:UpdateSubscriber
+                  - budgets:DescribeNotificationsForBudget
+                  - budgets:DescribeSubscribersForNotification
+                Resource:
+                  - !Sub arn:aws:budgets::${AWS::AccountId}:budget/a72-recon0-*
               - Sid: Logs
                 Effect: Allow
                 Action:
