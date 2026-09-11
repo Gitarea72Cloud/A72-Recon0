@@ -41,6 +41,15 @@ jobs:
             --region "${{ env.SES_REGION }}" \
             --parameter-overrides SenderEmail="${{ inputs.senderEmail }}"
 
+      - name: Show stack events on failure
+        if: failure()
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name a72-recon0-ses-notifications \
+            --region "${{ env.SES_REGION }}" \
+            --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='ROLLBACK_IN_PROGRESS'].[LogicalResourceId,ResourceStatusReason]" \
+            --output table
+
       - name: Show verification status
         run: |
           aws sesv2 get-email-identity \
