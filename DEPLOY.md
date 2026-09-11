@@ -143,22 +143,30 @@ for either:
 When an instructor unlocks a module assessment, every student gets an
 in-app notification plus a best-effort email. The in-app half needs no
 setup (it's just DynamoDB), but the email half needs a one-time,
-console/email-click step, same shape as the Bedrock step above:
+console/email-click step, same shape as the Bedrock step above.
 
-1. **Deploy the sender identity** (`bootstrap/ses-notification-identity.yaml`)
-   to **eu-west-1 specifically** — Amazon SES isn't available in
-   eu-south-2 at all (same kind of region quirk as the Budgets template
-   needing us-east-1):
+**Via GitHub Actions (no local AWS credentials needed):** run the
+**Deploy SES notification identity** workflow from the repo's **Actions**
+tab (`workflow_dispatch`, optionally overriding the sender email — defaults
+to `morillasfj@gmail.com`), or:
+```bash
+gh workflow run deploy-ses-identity.yml
+```
+That deploys `bootstrap/ses-notification-identity.yaml` to **eu-west-1
+specifically** — Amazon SES isn't available in eu-south-2 at all (same
+kind of region quirk as the Budgets template needing us-east-1) — and
+prints the identity's verification status.
+
+Either way, then:
+1. **Click the confirmation link** AWS emails to that address — nothing
+   sends until it's clicked. Re-check status anytime:
    ```bash
-   aws cloudformation deploy \
-     --template-file bootstrap/ses-notification-identity.yaml \
-     --stack-name a72-recon0-ses-notifications \
-     --region eu-west-1 \
-     --parameter-overrides SenderEmail=morillasfj@gmail.com
+   aws sesv2 get-email-identity --email-identity morillasfj@gmail.com \
+     --region eu-west-1 --query VerifiedForSendingStatus
    ```
-2. **Click the confirmation link** AWS emails to that address — nothing
-   sends until it's clicked.
-3. **Known limitation:** new SES accounts start in the "sandbox," which
+   or in the console: SES → **Identities** → the address → look for a
+   green **Verified** badge.
+2. **Known limitation:** new SES accounts start in the "sandbox," which
    only delivers to *other* verified addresses until AWS grants
    production access (Account dashboard → "Request production access,"
    self-service — not the same as the account-verification gates hit
@@ -167,6 +175,9 @@ console/email-click step, same shape as the Bedrock step above:
    notification still lands regardless**, so the feature works end to
    end either way; requesting production access is a separate,
    non-blocking follow-up whenever it's convenient.
+
+(A manual `aws cloudformation deploy` to the same stack/region works
+identically if you'd rather run it with local credentials instead.)
 
 ## 5. Push to main
 
@@ -181,10 +192,19 @@ bucket, then invalidates the CloudFront cache (skipped automatically if
 ```bash
 aws cloudformation describe-stacks --stack-name a72-recon0-dev \
   --region eu-south-2 --query "Stacks[0].Outputs" --output table
-
-python3 scripts/seed_questions.py --table a72-recon0-dev --region eu-south-2
-python3 scripts/seed_module_questions.py --table a72-recon0-dev --region eu-south-2
 ```
+
+Seed the question bank (placement + all 11 module assessments) via the
+**Seed question content** GitHub Actions workflow — no local AWS
+credentials needed:
+```bash
+gh workflow run seed.yml
+```
+Both scripts write with `put_item`, so it's safe to re-run anytime
+content changes — existing items just get overwritten, nothing
+duplicates. (Or run the two scripts locally with your own credentials:
+`python3 scripts/seed_questions.py --table a72-recon0-dev --region eu-south-2`
+and `python3 scripts/seed_module_questions.py --table a72-recon0-dev --region eu-south-2`.)
 
 Then create yourself a Cognito user (`aws cognito-idp admin-create-user
 --user-pool-id <UserPoolId> --username you@example.com`) and hit

@@ -164,6 +164,35 @@ Resources:
                   - dynamodb:TagResource
                 Resource:
                   - !Sub arn:aws:dynamodb:*:${AWS::AccountId}:table/a72-recon0-*
+              - Sid: DynamoDbSeedData
+                Effect: Allow
+                Action:
+                  # Data-plane write only -- scripts/seed_questions.py and
+                  # scripts/seed_module_questions.py write question/module
+                  # content directly via boto3, run through the
+                  # workflow_dispatch seed.yml workflow. No reads granted
+                  # here; nothing in these scripts needs them.
+                  - dynamodb:PutItem
+                Resource:
+                  - !Sub arn:aws:dynamodb:*:${AWS::AccountId}:table/a72-recon0-*
+              - Sid: SesNotificationIdentity
+                Effect: Allow
+                Action:
+                  # For bootstrap/ses-notification-identity.yaml's
+                  # AWS::SES::EmailIdentity resource, deployed to eu-west-1
+                  # specifically via workflow_dispatch deploy-ses-identity.yml
+                  # -- SES isn't available in eu-south-2 at all.
+                  - ses:CreateEmailIdentity
+                  - ses:DeleteEmailIdentity
+                  - ses:GetEmailIdentity
+                  - ses:PutEmailIdentityDkimAttributes
+                  - ses:PutEmailIdentityDkimSigningAttributes
+                  - ses:PutEmailIdentityMailFromAttributes
+                  - ses:PutEmailIdentityFeedbackAttributes
+                  - ses:TagResource
+                  - ses:UntagResource
+                Resource:
+                  - !Sub arn:aws:ses:eu-west-1:${AWS::AccountId}:identity/*
               - Sid: CloudFront
                 Effect: Allow
                 Action:

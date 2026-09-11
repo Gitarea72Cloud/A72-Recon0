@@ -1,0 +1,40 @@
+name: Seed question content
+
+# Manual only -- run from the Actions tab (or `gh workflow run seed.yml`)
+# whenever the question bank needs (re-)seeding. Idempotent: both scripts
+# write with put_item, so re-running just overwrites existing items with
+# the same content, nothing accumulates or duplicates.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # OIDC -- no long-lived AWS keys in this repo
+  contents: read
+
+env:
+  AWS_REGION: eu-south-2
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::738388288350:role/A72Recon0-GitHubActionsDeployRole
+  TABLE_NAME: a72-recon0-dev
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install boto3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Seed placement question bank
+        run: python3 scripts/seed_questions.py --table "${{ env.TABLE_NAME }}" --region "${{ env.AWS_REGION }}"
+
+      - name: Seed module assessments
+        run: python3 scripts/seed_module_questions.py --table "${{ env.TABLE_NAME }}" --region "${{ env.AWS_REGION }}"

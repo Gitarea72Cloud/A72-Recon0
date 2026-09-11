@@ -1,0 +1,50 @@
+name: Deploy SES notification identity
+
+# Manual, one-time (re-runnable/idempotent via CloudFormation) -- deploys
+# bootstrap/ses-notification-identity.yaml to eu-west-1 specifically,
+# since Amazon SES isn't available in eu-south-2 at all (same kind of
+# region quirk as the Bedrock cost-budget bootstrap needing us-east-1).
+# After this runs, AWS emails SenderEmail a confirmation link -- nothing
+# sends until that link is clicked (see DEPLOY.md for how to verify).
+on:
+  workflow_dispatch:
+    inputs:
+      senderEmail:
+        description: "Address to verify as the notification sender"
+        required: false
+        default: "morillasfj@gmail.com"
+
+permissions:
+  id-token: write   # OIDC -- no long-lived AWS keys in this repo
+  contents: read
+
+env:
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::738388288350:role/A72Recon0-GitHubActionsDeployRole
+  SES_REGION: eu-west-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.SES_REGION }}
+
+      - name: Deploy SES email identity
+        run: |
+          aws cloudformation deploy \
+            --template-file bootstrap/ses-notification-identity.yaml \
+            --stack-name a72-recon0-ses-notifications \
+            --region "${{ env.SES_REGION }}" \
+            --parameter-overrides SenderEmail="${{ inputs.senderEmail }}"
+
+      - name: Show verification status
+        run: |
+          aws sesv2 get-email-identity \
+            --email-identity "${{ inputs.senderEmail }}" \
+            --region "${{ env.SES_REGION }}" \
+            --query "{VerifiedForSendingStatus:VerifiedForSendingStatus}" \
+            --output table
