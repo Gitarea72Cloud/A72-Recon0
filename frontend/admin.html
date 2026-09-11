@@ -268,6 +268,7 @@
   // ---------------------------------------------------------------- Questions
   let allQuestions = [];
   let allModules = [];
+  let pendingQuestionSearch = null;
 
   async function loadModulesMeta() {
     if (allModules.length) return allModules;
@@ -344,23 +345,26 @@
       app.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
       return;
     }
+    const initialSearch = pendingQuestionSearch || "";
+    pendingQuestionSearch = null;
     app.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <div class="search-row" style="margin-bottom:0"><input id="qSearch" placeholder="Search by item id, prompt, or domain…"></div>
+        <div class="search-row" style="margin-bottom:0"><input id="qSearch" placeholder="Search by item id, prompt, or domain…" value="${initialSearch}"></div>
         <button class="btn btn-primary" id="newQBtn">+ New question</button>
       </div>
-      <div id="qContainers">${splitContainersHtml(allQuestions)}</div>
+      <div id="qContainers"></div>
     `;
-    wireQuestionRowActions();
-    document.getElementById("newQBtn").addEventListener("click", () => renderQuestionForm(null));
-    document.getElementById("qSearch").addEventListener("input", (e) => {
-      const term = e.target.value.trim().toLowerCase();
+    function applyFilter(term) {
+      term = term.trim().toLowerCase();
       const filtered = term
         ? allQuestions.filter((q) => q.itemId.toLowerCase().includes(term) || q.domain.toLowerCase().includes(term) || q.prompt.toLowerCase().includes(term))
         : allQuestions;
       document.getElementById("qContainers").innerHTML = splitContainersHtml(filtered);
       wireQuestionRowActions();
-    });
+    }
+    applyFilter(initialSearch);
+    document.getElementById("newQBtn").addEventListener("click", () => renderQuestionForm(null));
+    document.getElementById("qSearch").addEventListener("input", (e) => applyFilter(e.target.value));
   }
 
   function filesEditorHtml(files) {
@@ -544,10 +548,16 @@
           </div>
           <div style="display:flex;align-items:center;gap:12px">
             <span class="lock-pill ${m.unlocked ? "unlocked" : "locked"}">${m.unlocked ? "Unlocked" : "Locked"}</span>
+            <button class="btn btn-secondary" data-view-questions="${m.moduleId}">View questions</button>
             <button class="btn btn-secondary" data-toggle="${m.moduleId}" data-unlocked="${m.unlocked}">${m.unlocked ? "Lock" : "Unlock"}</button>
           </div>
         </div>`).join("")
       : '<p class="muted">No modules seeded yet — run scripts/seed_module_questions.py.</p>';
+
+    app.querySelectorAll("[data-view-questions]").forEach((btn) => btn.addEventListener("click", () => {
+      pendingQuestionSearch = btn.dataset.viewQuestions;
+      document.querySelector('.tab[data-tab="questions"]').click();
+    }));
 
     app.querySelectorAll("[data-toggle]").forEach((btn) => btn.addEventListener("click", async () => {
       const moduleId = btn.dataset.toggle;
