@@ -240,20 +240,85 @@
   let answeredCount = 0;
   let correctCount = 0;
 
-  // The "Translate to Spanish" link never actually translates anything --
-  // it's a nudge. English is the de facto language of technical docs,
-  // forums, and tooling, so we lean into that here rather than papering
-  // over it. Logged (fire-and-forget) to /session/{id}/translate so
-  // instructors can see which students are hitting a language barrier
+  // The "Translate to Spanish" link opens a nudge -- in Spanish, since a
+  // student reaching for translation may not read English comfortably
+  // yet -- offering a real choice: try it in English, or continue with
+  // an actual machine translation (Amazon Translate, via
+  // /session/{id}/translate). Either choice logs the request so
+  // instructors can see who's hitting a language barrier
   // (admin-student.html's "Language support" panel, and the cohort-wide
-  // view on the Overview tab).
-  const TRANSLATION_NUDGE_MESSAGES = [
-    "English is the language of the internet — most docs, forums, and tools default to it. Building that fluency now pays off far beyond this one question. Give it a shot in English first! \u{1F30D}",
-    "Quick heads up: almost all technical documentation and forums are in English. Leaning into it now, even when it's tough, is part of the training. \u{1F4AA}",
-    "We get it, English can be a hurdle — but it's the de facto language of tech (docs, Stack Overflow, READMEs, all of it). Worth pushing through here. \u{1F680}",
-    "Real-world resources in this field are English-first too, so there's no translate button waiting for you later either. Consider this good practice. \u{1F4DA}",
+  // view on the Overview tab). Applies to both the placement test and
+  // every module assessment, since both run through this same page.
+  const TRANSLATE_NUDGE_MESSAGES_ES = [
+    "El inglés es el idioma estándar de la documentación técnica, los foros y las herramientas del sector. Practicarlo ahora te ayudará muchísimo a largo plazo. \u{1F30D}",
+    "Casi toda la documentación técnica y los foros de programación están en inglés. Acostumbrarte ahora, aunque cueste, forma parte del entrenamiento. \u{1F4AA}",
+    "Sabemos que el inglés puede costar, pero es el idioma de facto de la tecnología: documentación, foros, herramientas... Merece la pena esforzarse aquí. \u{1F680}",
   ];
   const translateIdxRef = { value: -1 };
+
+  function applyTranslatedPrompt(translatedText) {
+    const promptEl = document.getElementById("promptText");
+    if (!promptEl) return;
+    promptEl.textContent = translatedText;
+    const noteEl = document.getElementById("promptTranslatedNote");
+    if (noteEl) noteEl.hidden = false;
+  }
+
+  function showTranslateModal(item) {
+    let idx = Math.floor(Math.random() * TRANSLATE_NUDGE_MESSAGES_ES.length);
+    if (idx === translateIdxRef.value) idx = (idx + 1) % TRANSLATE_NUDGE_MESSAGES_ES.length;
+    translateIdxRef.value = idx;
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px";
+    overlay.innerHTML =
+      '<div class="card" style="max-width:420px;text-align:center">' +
+        '<p style="font-size:15px;margin-bottom:10px">' + TRANSLATE_NUDGE_MESSAGES_ES[idx] + "</p>" +
+        '<p style="font-size:13px;color:var(--muted);margin-bottom:18px">¿Quieres intentarlo en inglés, o prefieres continuar en español?</p>' +
+        '<div id="translateModalError"></div>' +
+        '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+          '<button class="btn btn-primary" id="translateTryBtn">Intentar en inglés</button>' +
+          '<button class="btn btn-secondary" id="translateContinueBtn">Continuar en español</button>' +
+        "</div>" +
+      "</div>";
+    document.body.appendChild(overlay);
+
+    document.getElementById("translateTryBtn").addEventListener("click", () => {
+      overlay.remove();
+      A72.apiFetch("/session/" + sessionId + "/translate", {
+        method: "POST",
+        body: JSON.stringify({ itemId: item.itemId, domain: item.domain }),
+      }).catch(() => { /* non-critical */ });
+    });
+
+    document.getElementById("translateContinueBtn").addEventListener("click", async () => {
+      const continueBtn = document.getElementById("translateContinueBtn");
+      const tryBtn = document.getElementById("translateTryBtn");
+      const errEl = document.getElementById("translateModalError");
+      continueBtn.disabled = true;
+      tryBtn.disabled = true;
+      continueBtn.textContent = "Traduciendo…";
+      try {
+        const res = await A72.apiFetch("/session/" + sessionId + "/translate", {
+          method: "POST",
+          body: JSON.stringify({ itemId: item.itemId, domain: item.domain, text: item.prompt }),
+        });
+        if (res.translatedText) {
+          applyTranslatedPrompt(res.translatedText);
+          overlay.remove();
+        } else {
+          errEl.innerHTML = '<p style="font-size:12.5px;color:var(--danger);margin-bottom:10px">La traducción no está disponible ahora mismo — puedes seguir intentándolo en inglés.</p>';
+          continueBtn.disabled = false;
+          tryBtn.disabled = false;
+          continueBtn.textContent = "Continuar en español";
+        }
+      } catch (err) {
+        errEl.innerHTML = '<p style="font-size:12.5px;color:var(--danger);margin-bottom:10px">' + err.message + "</p>";
+        continueBtn.disabled = false;
+        tryBtn.disabled = false;
+        continueBtn.textContent = "Continuar en español";
+      }
+    });
+  }
   function maybeShowMotivation() {
     if (answeredCount > 0 && answeredCount % 5 === 0) {
       showBlockingModal(MOTIVATION_MESSAGES, motivationIdxRef);
@@ -403,12 +468,16 @@
     document.getElementById("translateToggle").addEventListener("click", (e) => {
       e.preventDefault();
       markInteraction();
-      showBlockingModal(TRANSLATION_NUDGE_MESSAGES, translateIdxRef);
-      A72.apiFetch("/session/" + sessionId + "/translate", {
-        method: "POST",
-        body: JSON.stringify({ itemId: item.itemId, domain: item.domain }),
-      }).catch(() => { /* non-critical, the nudge already showed */ });
+      showTranslateModal(item);
     });
+    const revertLink = document.getElementById("revertToEnglish");
+    if (revertLink) {
+      revertLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        document.getElementById("promptText").textContent = item.prompt;
+        document.getElementById("promptTranslatedNote").hidden = true;
+      });
+    }
   }
 
   function wireFeedbackForm(item) {
@@ -458,7 +527,8 @@
       '</div>' +
       '<div class="test-layout">' +
         '<div class="test-main">' +
-          '<div class="card prompt-card"><h2>' + item.prompt + '</h2>' +
+          '<div class="card prompt-card"><h2 id="promptText">' + item.prompt + '</h2>' +
+            '<p id="promptTranslatedNote" hidden style="font-size:11.5px;color:var(--muted);margin:-8px 0 8px">Traducido automáticamente — <a href="#" id="revertToEnglish">ver en inglés</a></p>' +
             '<a href="#" id="translateToggle" style="font-size:12.5px;display:inline-block;margin-top:8px;margin-right:14px">🌐 Translate to Spanish</a>' +
             '<a href="#" id="feedbackToggle" style="font-size:12.5px;display:inline-block;margin-top:8px">Something wrong with this question?</a>' +
             '<div id="feedbackForm" hidden style="margin-top:10px">' +

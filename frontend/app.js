@@ -172,6 +172,29 @@
       gridlines + '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots + labels + "</svg>";
   }
 
+  // A shield-and-checkmark badge for a passed module assessment --
+  // deliberately not an Olympic-medal emoji, to fit a cybersecurity
+  // programme's visual language. Tier is purely cosmetic (color), the
+  // actual bronze/silver/gold cutoffs live server-side in
+  // common/scoring.py's module_badge.
+  const BADGE_COLORS = { bronze: "#cd7f32", silver: "#94a3b8", gold: "#e0a916" };
+  const BADGE_LABELS = { bronze: "Bronze", silver: "Silver", gold: "Gold" };
+
+  function renderBadge(tier) {
+    if (!tier || !BADGE_COLORS[tier]) return "";
+    const color = BADGE_COLORS[tier];
+    const label = BADGE_LABELS[tier];
+    return (
+      '<span class="a72-badge" title="' + label + ' badge" style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700">' +
+        '<svg viewBox="0 0 24 26" width="16" height="17" fill="none" aria-hidden="true">' +
+          '<path d="M12 1 L21 4.5 V12 C21 18.5 17 23 12 25 C7 23 3 18.5 3 12 V4.5 Z" fill="' + color + '" stroke="rgba(0,0,0,.18)" stroke-width="0.6"/>' +
+          '<path d="M8.3 12.6 L10.8 15.2 L16 9.2" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+        "</svg>" +
+        label +
+      "</span>"
+    );
+  }
+
   function redirectToSignIn(next) {
     const n = next || (location.pathname.split("/").pop() || "index.html");
     location.href = "signin.html?next=" + encodeURIComponent(n);
@@ -201,6 +224,6 @@
   window.A72 = {
     userPool, getCurrentUser, getIdToken, isSignedIn, isInstructor, signOut,
     signIn, completeNewPassword, apiFetch, redirectToSignIn, renderAuthNav,
-    getCohortLabel, getNotifications, markNotificationRead, renderLineChart,
+    getCohortLabel, getNotifications, markNotificationRead, renderLineChart, renderBadge,
   };
 })();

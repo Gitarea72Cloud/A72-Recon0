@@ -73,7 +73,6 @@
   function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : "—"; }
 
   const STATUS_LABEL = { locked: "Locked", not_started: "Not started", in_progress: "In progress", done: "Done" };
-  const BADGE_EMOJI = { gold: "🥇", silver: "🥈", bronze: "🥉" };
 
   async function render() {
     const p = await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId));
@@ -98,7 +97,10 @@
       <div class="module-tile">
         <div class="order">Module ${String(m.order).padStart(2, "0")}</div>
         <div class="title">${esc(m.title)}</div>
-        <span class="status-pill ${m.status}">${STATUS_LABEL[m.status] || m.status}${m.status === "done" && m.compositeScore != null ? " — " + m.compositeScore + "%" : ""}${m.badge ? " " + BADGE_EMOJI[m.badge] : ""}</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="status-pill ${m.status}">${STATUS_LABEL[m.status] || m.status}${m.status === "done" && m.compositeScore != null ? " — " + m.compositeScore + "%" : ""}</span>
+          ${A72.renderBadge(m.badge)}
+        </div>
       </div>`).join("");
 
     const tr = p.translationRequests || { count: 0, items: [] };

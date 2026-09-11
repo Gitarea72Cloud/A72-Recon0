@@ -61,7 +61,7 @@
 <main>
   <div class="modwrap">
     <h1>Your modules</h1>
-    <p class="muted">Follow-up assessments unlock here as your instructor opens each module. Same rules as the placement test — hints cost a little credit, but nothing here affects your track. Finish one at 70%+ and you'll earn a badge: 🥉 Bronze (70%+) · 🥈 Silver (80%+) · 🥇 Gold (90%+).</p>
+    <p class="muted">Follow-up assessments unlock here as your instructor opens each module. Same rules as the placement test — hints cost a little credit, but nothing here affects your track. Finish one at 70%+ and you'll earn a badge — Bronze (70%+), Silver (80%+), Gold (90%+).</p>
 
     <div class="notif-panel">
       <button class="notif-toggle" id="notifToggle">
@@ -90,9 +90,6 @@
   const STATUS_LABEL = {
     locked: "Locked", unlocked: "Not started", in_progress: "In progress", done: "Done",
   };
-  const BADGE_EMOJI = { gold: "🥇", silver: "🥈", bronze: "🥉" };
-  const BADGE_LABEL = { gold: "Gold", silver: "Silver", bronze: "Bronze" };
-
   function renderModules(modules) {
     if (!modules.length) {
       app.innerHTML = '<p class="muted">No modules published yet.</p>';
@@ -101,8 +98,7 @@
     app.innerHTML = modules.map((m) => {
       const locked = m.status === "locked";
       const label = STATUS_LABEL[m.status] || m.status;
-      const badgeText = m.badge ? " " + BADGE_EMOJI[m.badge] + " " + BADGE_LABEL[m.badge] : "";
-      const scoreText = m.status === "done" && m.score != null ? " — " + m.score + "%" + badgeText : "";
+      const scoreText = m.status === "done" && m.score != null ? " — " + m.score + "%" : "";
       const btn = locked
         ? '<button class="btn btn-secondary" disabled>Locked</button>'
         : `<a class="btn btn-primary" href="test.html?module=${encodeURIComponent(m.moduleId)}&title=${encodeURIComponent(m.title)}">` +
@@ -114,6 +110,7 @@
             <h3>${esc(m.title)}</h3>
           </div>
           <div style="display:flex;align-items:center;gap:12px">
+            ${A72.renderBadge(m.badge)}
             <span class="status-pill ${m.status}">${label}${scoreText}</span>
             ${btn}
           </div>

@@ -444,11 +444,22 @@ Resources:
     Properties:
       CodeUri: src/functions/log_translation/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TRANSLATE_REGION: eu-west-1
       Layers:
         - !Ref CommonLayer
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref DataTable
+        - Statement:
+            - Sid: AmazonTranslate
+              Effect: Allow
+              Action:
+                - translate:TranslateText
+              # Amazon Translate has no resource-level permissions --
+              # every action is Resource: "*" by design (AWS-documented).
+              Resource: "*"
       Events:
         Api:
           Type: HttpApi
