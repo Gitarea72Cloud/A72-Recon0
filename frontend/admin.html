@@ -22,6 +22,26 @@
   .section { margin-bottom: 36px; }
   .section h2 { font-size: 16px; margin-bottom: 12px; }
 
+  /* ---- collapsed-by-default detail panels: headline numbers stay
+     visible, heavier tables/charts open on demand ("zoom in") ---- */
+  details.collapsible {
+    border: 1px solid var(--line); border-radius: var(--radius);
+    margin-bottom: 14px; overflow: hidden; background: var(--surface);
+  }
+  details.collapsible > summary {
+    list-style: none; cursor: pointer; padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  details.collapsible > summary::-webkit-details-marker { display: none; }
+  details.collapsible > summary::after {
+    content: "+"; font-size: 18px; line-height: 1; color: var(--muted); flex: 0 0 auto;
+  }
+  details.collapsible[open] > summary::after { content: "\2212"; }
+  details.collapsible > summary:hover { background: var(--surface-2); }
+  details.collapsible > summary h2 { font-size: 15px; margin: 0; }
+  details.collapsible > summary .summary-line { font-size: 12.5px; color: var(--muted); margin-top: 3px; font-weight: 400; }
+  details.collapsible > .panel-body { padding: 4px 18px 18px; border-top: 1px solid var(--line); }
+
   table.datatable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   table.datatable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
   table.datatable td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -195,6 +215,16 @@
         </div>`;
     }).join("");
 
+    const domainValues = Object.values(d.domainAverages || {});
+    const domainOverallAvg = domainValues.length ? Math.round((domainValues.reduce((a, b) => a + b, 0) / domainValues.length) * 10) / 10 : null;
+
+    const itemStatsList = d.itemStats || [];
+    const weakestItem = itemStatsList.length ? itemStatsList.slice().sort((a, b) => a.passRate - b.passRate)[0] : null;
+
+    const modulesWithData = (d.modulePerformance || []).filter((m) => m.avgScore != null);
+    const moduleOverallAvg = modulesWithData.length
+      ? Math.round((modulesWithData.reduce((a, m) => a + m.avgScore, 0) / modulesWithData.length) * 10) / 10 : null;
+
     return `
       <div class="stats">
         <div class="stat"><div class="v">${d.provisionedAccounts ?? "—"}</div><div class="l">Provisioned accounts</div></div>
@@ -205,31 +235,50 @@
         ${trackRows}
       </div>
 
-      <div class="section">
-        <h2>Average score by domain</h2>
-        <div class="tblwrap"><table class="datatable">
-          <thead><tr><th>Domain</th><th>Cohort average</th></tr></thead>
-          <tbody>${domainRows || '<tr><td colspan="2" class="muted">No completed sessions yet.</td></tr>'}</tbody>
-        </table></div>
-      </div>
-
-      <div class="section">
-        <h2>Per-question performance</h2>
-        <p class="muted" style="font-size:13px;margin-top:-6px">Grouped by domain, hardest first within each — low pass rate or high hint usage flags a question worth reviewing (or a topic the cohort needs more support on).</p>
-        ${itemContainers || '<p class="muted">No answers recorded yet.</p>'}
-      </div>
-
-      <div class="section">
-        <h2>Cohort progress across modules</h2>
-        <p class="muted" style="font-size:13px;margin-top:-6px">Average module-assessment score, in module order — how the cohort as a whole is trending through the programme.</p>
-        <div class="chart-card">
-          ${A72.renderLineChart(
-            (d.modulePerformance || []).filter((m) => m.avgScore != null).map((m) => ({
-              label: "M" + String(m.order).padStart(2, "0"), value: m.avgScore,
-            }))
-          )}
+      <details class="collapsible">
+        <summary>
+          <div>
+            <h2>Average score by domain</h2>
+            <div class="summary-line">${domainValues.length ? domainValues.length + " domains tracked · overall avg " + domainOverallAvg + "%" : "No completed sessions yet"}</div>
+          </div>
+        </summary>
+        <div class="panel-body">
+          <div class="tblwrap"><table class="datatable">
+            <thead><tr><th>Domain</th><th>Cohort average</th></tr></thead>
+            <tbody>${domainRows || '<tr><td colspan="2" class="muted">No completed sessions yet.</td></tr>'}</tbody>
+          </table></div>
         </div>
-      </div>
+      </details>
+
+      <details class="collapsible">
+        <summary>
+          <div>
+            <h2>Per-question performance</h2>
+            <div class="summary-line">${itemStatsList.length ? itemStatsList.length + " questions tracked · weakest: " + weakestItem.itemId + " (" + weakestItem.passRate + "% pass)" : "No answers recorded yet"}</div>
+          </div>
+        </summary>
+        <div class="panel-body">
+          <p class="muted" style="font-size:13px;margin-top:0">Grouped by domain, hardest first within each — low pass rate or high hint usage flags a question worth reviewing (or a topic the cohort needs more support on).</p>
+          ${itemContainers || '<p class="muted">No answers recorded yet.</p>'}
+        </div>
+      </details>
+
+      <details class="collapsible">
+        <summary>
+          <div>
+            <h2>Cohort progress across modules</h2>
+            <div class="summary-line">${modulesWithData.length ? modulesWithData.length + " module(s) with data · overall avg " + moduleOverallAvg + "%" : "No completed module assessments yet"}</div>
+          </div>
+        </summary>
+        <div class="panel-body">
+          <p class="muted" style="font-size:13px;margin-top:0">Average module-assessment score, in module order — how the cohort as a whole is trending through the programme.</p>
+          <div class="chart-card">
+            ${A72.renderLineChart(
+              modulesWithData.map((m) => ({ label: "M" + String(m.order).padStart(2, "0"), value: m.avgScore }))
+            )}
+          </div>
+        </div>
+      </details>
 
       <p class="muted" style="font-size:12.5px">${d.feedbackCount} question-feedback comment(s) and ${d.surveyCount} exit-survey response(s) — see the Feedback tab.</p>
     `;
