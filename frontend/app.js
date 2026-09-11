@@ -48,6 +48,37 @@
     }
   }
 
+  // Cognito groups follow the naming convention cohort-<n>-<yyyy>-<mm>
+  // (e.g. "cohort-1-2026-10"), maintained as AWS::Cognito::UserPoolGroup
+  // resources in template.yaml. Reading it straight from the ID token's
+  // cognito:groups claim avoids standing up a separate cohort-metadata
+  // store just to label the footer.
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  function formatCohortLabel(group) {
+    const m = /^cohort-(\d+)-(\d{4})-(\d{1,2})$/.exec(group);
+    if (!m) return group.replace(/-/g, " ");
+    const [, num, year, month] = m;
+    const monthName = MONTH_NAMES[parseInt(month, 10) - 1] || month;
+    return "Cohort " + num + " · " + monthName + " " + year;
+  }
+
+  // Resolves to a human-readable cohort label ("Cohort 1 · Oct 2026") from
+  // the signed-in user's cognito:groups claim, or null if signed out or
+  // not assigned to any cohort-* group.
+  function getCohortLabel() {
+    return new Promise((resolve) => {
+      const cognitoUser = getCurrentUser();
+      if (!cognitoUser) return resolve(null);
+      cognitoUser.getSession((err, session) => {
+        if (err || !session || !session.isValid()) return resolve(null);
+        const groups = session.getIdToken().payload["cognito:groups"] || [];
+        const cohortGroup = groups.find((g) => /^cohort-/.test(g));
+        resolve(cohortGroup ? formatCohortLabel(cohortGroup) : null);
+      });
+    });
+  }
+
   function signOut() {
     const cognitoUser = getCurrentUser();
     if (cognitoUser) cognitoUser.signOut();
@@ -132,5 +163,6 @@
   window.A72 = {
     userPool, getCurrentUser, getIdToken, isSignedIn, isInstructor, signOut,
     signIn, completeNewPassword, apiFetch, redirectToSignIn, renderAuthNav,
+    getCohortLabel,
   };
 })();

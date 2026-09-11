@@ -82,6 +82,20 @@ Resources:
       UserPoolId: !Ref UserPool
       Description: Gates the admin-only API routes.
 
+  # Cohort membership groups follow the naming convention
+  # cohort-<n>-<yyyy>-<mm>. The frontend footer reads this straight off
+  # the ID token's cognito:groups claim (see frontend/app.js
+  # getCohortLabel) instead of a separate cohort-metadata table -- add a
+  # new AWS::Cognito::UserPoolGroup per intake and assign students to it
+  # (e.g. `aws cognito-idp admin-add-user-to-group`) and the footer picks
+  # it up automatically, no other deploy needed.
+  UserPoolCohort1Group:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: cohort-1-2026-10
+      UserPoolId: !Ref UserPool
+      Description: "Cohort 1, intake October 2026."
+
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:

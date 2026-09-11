@@ -75,7 +75,7 @@
 <footer>
   <div class="wrap">
     <span>A72-Recon0 · Evolve Master — Cybersecurity</span>
-    <span class="mono">placement · Cohort 1 · Oct 2026</span>
+    <span class="mono" id="cohortLabel">placement</span>
   </div>
 </footer>
 
@@ -84,6 +84,10 @@
 <script src="app.js"></script>
 <script>
   A72.renderAuthNav(document.getElementById("authNav"));
+
+  A72.getCohortLabel().then((label) => {
+    if (label) document.getElementById("cohortLabel").textContent = "placement · " + label;
+  });
 
   document.getElementById("startBtn").addEventListener("click", async (e) => {
     e.preventDefault();
