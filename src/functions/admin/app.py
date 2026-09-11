@@ -126,10 +126,21 @@ def _cohort_data():
     return placement_sessions, results, feedback, surveys
 
 
+# Module assessments are diagnostic, not a placement decision (see
+# finalize_module in submit_answer) -- this threshold only drives the
+# admin dashboard's passed/failed breakdown, it never gates or blocks a
+# student from anything. 70% matches the placement test's own
+# Stage-0-confirmation bar (scoring.STAGE0_HIGH_THRESHOLD) for
+# consistency, not because it's derived from module content difficulty.
+MODULE_PASS_THRESHOLD = 70.0
+
+
 def module_dashboard_stats() -> dict:
     """moduleId -> {moduleId, title, order, unlocked, started, completed,
-    avgScore} -- joins MODULE_META with every module session/result.
-    Feeds both GET /admin/modules and the Overview cohort-trend chart.
+    inProgress, passed, failed, avgScore} -- joins MODULE_META with every
+    module session/result. Feeds GET /admin/modules (Modules tab, incl.
+    its started/in-progress/passed/failed status bar) and the Overview
+    cohort-trend chart.
     """
     sessions, results, _, _ = _all_sessions_and_results()
     module_sessions = [s for s in sessions if str(s.get("checkpoint", "")).startswith("module-")]
@@ -145,6 +156,7 @@ def module_dashboard_stats() -> dict:
             result = results.get(session_id)
             if result and "composite_score" in result:
                 scores.append(result["composite_score"])
+        passed = sum(1 for sc in scores if sc >= MODULE_PASS_THRESHOLD)
         stats[module_id] = {
             "moduleId": module_id,
             "title": meta.get("title"),
@@ -153,6 +165,9 @@ def module_dashboard_stats() -> dict:
             "unlocked": meta.get("unlocked", False),
             "started": len(m_sessions),
             "completed": len(done),
+            "inProgress": len(m_sessions) - len(done),
+            "passed": passed,
+            "failed": len(scores) - passed,
             "avgScore": round(sum(scores) / len(scores), 1) if scores else None,
         }
     return stats
