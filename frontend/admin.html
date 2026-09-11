@@ -225,6 +225,14 @@
     const moduleOverallAvg = modulesWithData.length
       ? Math.round((modulesWithData.reduce((a, m) => a + m.avgScore, 0) / modulesWithData.length) * 10) / 10 : null;
 
+    const translationSignals = d.translationSignals || [];
+    const translationRows = translationSignals.map((t) => `
+      <tr>
+        <td><a href="admin-student.html?id=${encodeURIComponent(t.studentId)}">${t.email}</a></td>
+        <td>${t.count}</td>
+        <td>${fmtDate(t.lastRequestedAt)}</td>
+      </tr>`).join("");
+
     return `
       <div class="stats">
         <div class="stat"><div class="v">${d.provisionedAccounts ?? "—"}</div><div class="l">Provisioned accounts</div></div>
@@ -277,6 +285,22 @@
               modulesWithData.map((m) => ({ label: "M" + String(m.order).padStart(2, "0"), value: m.avgScore }))
             )}
           </div>
+        </div>
+      </details>
+
+      <details class="collapsible">
+        <summary>
+          <div>
+            <h2>Language support signals</h2>
+            <div class="summary-line">${translationSignals.length ? translationSignals.length + " student(s) have clicked \"Translate\"" : "No translation requests yet"}</div>
+          </div>
+        </summary>
+        <div class="panel-body">
+          <p class="muted" style="font-size:13px;margin-top:0">Students who clicked "Translate to Spanish" on a question — the button itself just shows an English-encouragement nudge, this is who might benefit from extra language support.</p>
+          <div class="tblwrap"><table class="datatable">
+            <thead><tr><th>Student</th><th>Times requested</th><th>Most recent</th></tr></thead>
+            <tbody>${translationRows || '<tr><td colspan="3" class="muted">No translation requests yet.</td></tr>'}</tbody>
+          </table></div>
         </div>
       </details>
 

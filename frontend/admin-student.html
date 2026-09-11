@@ -73,6 +73,7 @@
   function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : "—"; }
 
   const STATUS_LABEL = { locked: "Locked", not_started: "Not started", in_progress: "In progress", done: "Done" };
+  const BADGE_EMOJI = { gold: "🥇", silver: "🥈", bronze: "🥉" };
 
   async function render() {
     const p = await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId));
@@ -97,8 +98,18 @@
       <div class="module-tile">
         <div class="order">Module ${String(m.order).padStart(2, "0")}</div>
         <div class="title">${esc(m.title)}</div>
-        <span class="status-pill ${m.status}">${STATUS_LABEL[m.status] || m.status}${m.status === "done" && m.compositeScore != null ? " — " + m.compositeScore + "%" : ""}</span>
+        <span class="status-pill ${m.status}">${STATUS_LABEL[m.status] || m.status}${m.status === "done" && m.compositeScore != null ? " — " + m.compositeScore + "%" : ""}${m.badge ? " " + BADGE_EMOJI[m.badge] : ""}</span>
       </div>`).join("");
+
+    const tr = p.translationRequests || { count: 0, items: [] };
+    const translationPanel = tr.count > 0 ? `
+      <div class="section">
+        <h2>Language support</h2>
+        <div class="rec-card" style="background:var(--basic-soft);border-color:color-mix(in srgb, var(--basic) 30%, var(--line))">
+          <h3 style="color:var(--basic)">Requested translation ${tr.count} time${tr.count === 1 ? "" : "s"}</h3>
+          <p style="margin:0;font-size:13px">${tr.items.slice(0, 8).map((i) => (i.domain || "").replace(/_/g, " ") + " / " + i.itemId).join(" · ")}${tr.items.length > 8 ? " …" : ""}</p>
+        </div>
+      </div>` : "";
 
     const progressPoints = [];
     if (placement && placement.status === "done") {
@@ -134,6 +145,8 @@
         <h2>Modules</h2>
         <div class="module-grid">${moduleTiles || '<p class="muted">No modules seeded yet.</p>'}</div>
       </div>
+
+      ${translationPanel}
 
       ${placement ? `
         <h3 style="font-size:15px;margin:20px 0 10px">Placement answer history</h3>

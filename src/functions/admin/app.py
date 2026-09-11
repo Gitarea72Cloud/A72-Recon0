@@ -117,22 +117,43 @@ def _all_sessions_and_results():
     results = {i["PK"].replace("RESULT#", ""): i for i in items if i["PK"].startswith("RESULT#")}
     feedback = [i for i in items if i["PK"].startswith("FEEDBACK#")]
     surveys = [i for i in items if i["PK"].startswith("SURVEY#")]
-    return sessions, results, feedback, surveys
+    translations = [i for i in items if i["SK"].startswith("TRANSLATION#")]
+    return sessions, results, feedback, surveys, translations
 
 
 def _cohort_data():
-    sessions, results, feedback, surveys = _all_sessions_and_results()
+    sessions, results, feedback, surveys, _ = _all_sessions_and_results()
     placement_sessions = [s for s in sessions if s.get("checkpoint", "placement") == "placement"]
     return placement_sessions, results, feedback, surveys
+
+
+def _translation_signals(users: dict) -> list:
+    """One row per student who's clicked "Translate" at least once --
+    count + most recent request -- for the Overview tab's language-
+    support panel and each student's own profile.
+    """
+    _, _, _, _, translations = _all_sessions_and_results()
+    by_student: dict = {}
+    for t in translations:
+        student_id = t["PK"].replace("STUDENT#", "")
+        row = by_student.setdefault(student_id, {"studentId": student_id, "count": 0, "lastRequestedAt": 0, "items": []})
+        row["count"] += 1
+        row["lastRequestedAt"] = max(row["lastRequestedAt"], t.get("requestedAt", 0))
+        row["items"].append({"domain": t.get("domain"), "itemId": t.get("itemId"), "requestedAt": t.get("requestedAt")})
+    rows = list(by_student.values())
+    for row in rows:
+        row["email"] = users.get(row["studentId"], {}).get("email", row["studentId"])
+        row["items"].sort(key=lambda i: i.get("requestedAt", 0), reverse=True)
+    rows.sort(key=lambda r: r["count"], reverse=True)
+    return rows
 
 
 # Module assessments are diagnostic, not a placement decision (see
 # finalize_module in submit_answer) -- this threshold only drives the
 # admin dashboard's passed/failed breakdown, it never gates or blocks a
-# student from anything. 70% matches the placement test's own
-# Stage-0-confirmation bar (scoring.STAGE0_HIGH_THRESHOLD) for
-# consistency, not because it's derived from module content difficulty.
-MODULE_PASS_THRESHOLD = 70.0
+# student from anything. Shares its value with scoring.MODULE_BADGE_BRONZE
+# so "passed" and "earned a badge" never drift apart.
+MODULE_PASS_THRESHOLD = scoring.MODULE_BADGE_BRONZE
 
 
 def module_dashboard_stats() -> dict:
@@ -142,7 +163,7 @@ def module_dashboard_stats() -> dict:
     its started/in-progress/passed/failed status bar) and the Overview
     cohort-trend chart.
     """
-    sessions, results, _, _ = _all_sessions_and_results()
+    sessions, results, _, _, _ = _all_sessions_and_results()
     module_sessions = [s for s in sessions if str(s.get("checkpoint", "")).startswith("module-")]
     modules_meta = {i["SK"]: i for i in db.query_partition("MODULE_META")}
 
@@ -291,8 +312,10 @@ def dashboard():
     )
 
     try:
-        provisioned = len(_all_cognito_users())
+        users = _all_cognito_users()
+        provisioned = len(users)
     except Exception:
+        users = {}
         provisioned = None
 
     module_stats = module_dashboard_stats()
@@ -315,6 +338,7 @@ def dashboard():
         "feedbackCount": len(feedback),
         "surveyCount": len(surveys),
         "modulePerformance": module_performance,
+        "translationSignals": _translation_signals(users),
     })
 
 
@@ -330,7 +354,7 @@ def students():
 
 
 def student_profile(student_id: str):
-    sessions, results, _, _ = _all_sessions_and_results()
+    sessions, results, _, _, translations = _all_sessions_and_results()
     all_student_sessions = [s for s in sessions if s["PK"] == f"STUDENT#{student_id}"]
     if not all_student_sessions:
         return response(404, {"error": "no sessions for this student"})
@@ -369,17 +393,30 @@ def student_profile(student_id: str):
             or max(m_sessions, key=lambda s: s.get("started_at", 0))
         session_id = session["SK"].replace("SESSION#", "")
         result = results.get(session_id)
+        score = result.get("composite_score") if result else None
         modules[module_id] = {
             "moduleId": module_id, "title": meta.get("title"), "order": meta.get("order"),
             "status": "done" if session.get("stage") == "done" else "in_progress",
-            "compositeScore": result.get("composite_score") if result else None,
+            "compositeScore": score,
+            "badge": scoring.module_badge(score) if session.get("stage") == "done" else None,
             "startedAt": session.get("started_at"),
             "completedAt": session.get("completed_at"),
             "hintsUsed": sum(a.get("hintsUsed", 0) for a in session.get("answers", [])),
             "answers": session.get("answers", []),
         }
 
-    return response(200, {"studentId": student_id, "email": email, "placement": placement, "modules": modules})
+    student_translations = [t for t in translations if t["PK"] == f"STUDENT#{student_id}"]
+    student_translations.sort(key=lambda t: t.get("requestedAt", 0), reverse=True)
+    translation_requests = {
+        "count": len(student_translations),
+        "items": [{"domain": t.get("domain"), "itemId": t.get("itemId"), "requestedAt": t.get("requestedAt")}
+                  for t in student_translations],
+    }
+
+    return response(200, {
+        "studentId": student_id, "email": email, "placement": placement, "modules": modules,
+        "translationRequests": translation_requests,
+    })
 
 
 def reset_student(student_id: str, checkpoint: str = "placement"):

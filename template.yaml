@@ -439,6 +439,24 @@ Resources:
             Path: /session/{sessionId}/feedback
             Method: POST
 
+  LogTranslationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/log_translation/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /session/{sessionId}/translate
+            Method: POST
+
   SubmitSurveyFunction:
     Type: AWS::Serverless::Function
     Properties:

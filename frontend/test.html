@@ -239,6 +239,21 @@
   const motivationIdxRef = { value: -1 };
   let answeredCount = 0;
   let correctCount = 0;
+
+  // The "Translate to Spanish" link never actually translates anything --
+  // it's a nudge. English is the de facto language of technical docs,
+  // forums, and tooling, so we lean into that here rather than papering
+  // over it. Logged (fire-and-forget) to /session/{id}/translate so
+  // instructors can see which students are hitting a language barrier
+  // (admin-student.html's "Language support" panel, and the cohort-wide
+  // view on the Overview tab).
+  const TRANSLATION_NUDGE_MESSAGES = [
+    "English is the language of the internet — most docs, forums, and tools default to it. Building that fluency now pays off far beyond this one question. Give it a shot in English first! \u{1F30D}",
+    "Quick heads up: almost all technical documentation and forums are in English. Leaning into it now, even when it's tough, is part of the training. \u{1F4AA}",
+    "We get it, English can be a hurdle — but it's the de facto language of tech (docs, Stack Overflow, READMEs, all of it). Worth pushing through here. \u{1F680}",
+    "Real-world resources in this field are English-first too, so there's no translate button waiting for you later either. Consider this good practice. \u{1F4DA}",
+  ];
+  const translateIdxRef = { value: -1 };
   function maybeShowMotivation() {
     if (answeredCount > 0 && answeredCount % 5 === 0) {
       showBlockingModal(MOTIVATION_MESSAGES, motivationIdxRef);
@@ -384,6 +399,18 @@
     });
   }
 
+  function wireTranslateButton(item) {
+    document.getElementById("translateToggle").addEventListener("click", (e) => {
+      e.preventDefault();
+      markInteraction();
+      showBlockingModal(TRANSLATION_NUDGE_MESSAGES, translateIdxRef);
+      A72.apiFetch("/session/" + sessionId + "/translate", {
+        method: "POST",
+        body: JSON.stringify({ itemId: item.itemId, domain: item.domain }),
+      }).catch(() => { /* non-critical, the nudge already showed */ });
+    });
+  }
+
   function wireFeedbackForm(item) {
     const toggle = document.getElementById("feedbackToggle");
     const form = document.getElementById("feedbackForm");
@@ -432,6 +459,7 @@
       '<div class="test-layout">' +
         '<div class="test-main">' +
           '<div class="card prompt-card"><h2>' + item.prompt + '</h2>' +
+            '<a href="#" id="translateToggle" style="font-size:12.5px;display:inline-block;margin-top:8px;margin-right:14px">🌐 Translate to Spanish</a>' +
             '<a href="#" id="feedbackToggle" style="font-size:12.5px;display:inline-block;margin-top:8px">Something wrong with this question?</a>' +
             '<div id="feedbackForm" hidden style="margin-top:10px">' +
               '<textarea id="feedbackText" rows="2" style="width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13.5px;font-family:inherit" placeholder="What\'s wrong, or any comment on this question…"></textarea>' +
@@ -466,6 +494,7 @@
     updateTimerDisplay();
     wireHintButtons(item);
     wireFeedbackForm(item);
+    wireTranslateButton(item);
 
     let termInput = null;
     if (isTerminal) {

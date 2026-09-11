@@ -7,7 +7,7 @@ or done (with their score). Read-only, student-scoped -- never exposes
 another student's data.
 """
 import json
-from common import db, auth
+from common import db, auth, scoring
 
 HEADERS = {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
 
@@ -36,6 +36,7 @@ def lambda_handler(event, context):
         module_id = meta["SK"]
         unlocked = meta.get("unlocked", False)
         m_sessions = sessions_by_checkpoint.get(module_id, [])
+        badge = None
         if not unlocked:
             status, score = "locked", None
         elif not m_sessions:
@@ -47,11 +48,12 @@ def lambda_handler(event, context):
                 status = "done"
                 result = db.get_item(f"RESULT#{session['SK'].replace('SESSION#', '')}", "SUMMARY")
                 score = result.get("composite_score") if result else None
+                badge = scoring.module_badge(score)
             else:
                 status, score = "in_progress", None
         rows.append({
             "moduleId": module_id, "title": meta.get("title"), "order": meta.get("order"),
-            "dateRange": meta.get("dateRange"), "status": status, "score": score,
+            "dateRange": meta.get("dateRange"), "status": status, "score": score, "badge": badge,
         })
 
     rows.sort(key=lambda r: r.get("order") or 0)

@@ -169,3 +169,25 @@ def score_domain_answers(answers: list[dict]) -> dict:
     all_vals = [v for vals in by_domain.values() for v in vals]
     scores["_overall"] = round(100 * sum(all_vals) / len(all_vals), 1) if all_vals else 0.0
     return scores
+
+
+# Module-completion badges -- student-facing gamification, entirely
+# separate from placement's Basic/Advanced track (no bearing on it
+# either way). Tiered purely by a module assessment's composite score;
+# BRONZE doubles as the pass/fail floor used elsewhere for admin
+# reporting (a failed attempt never earns a badge).
+MODULE_BADGE_GOLD = 90.0
+MODULE_BADGE_SILVER = 80.0
+MODULE_BADGE_BRONZE = 70.0
+
+
+def module_badge(score: float | None) -> str | None:
+    if score is None:
+        return None
+    if score >= MODULE_BADGE_GOLD:
+        return "gold"
+    if score >= MODULE_BADGE_SILVER:
+        return "silver"
+    if score >= MODULE_BADGE_BRONZE:
+        return "bronze"
+    return None
