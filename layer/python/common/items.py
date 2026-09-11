@@ -33,6 +33,29 @@ def next_item(session: dict) -> tuple[dict | None, int, int]:
     return items[answered], answered + 1, total
 
 
+def module_items(domain: str) -> list[dict]:
+    """Flat, deterministically-ordered item list for one module assessment
+    -- unlike stage_items, no stage concept, just every item under that
+    module's QUESTION partition in itemId order.
+    """
+    items = db.query_prefix(f"QUESTION#{domain}", "ITEM#")
+    items.sort(key=lambda i: i["SK"])
+    return items
+
+
+def next_module_item(session: dict) -> tuple[dict | None, int, int]:
+    """(item_or_None, 1-indexed position, total) for a module session --
+    position is simply how many answers it already has, since a module
+    session only ever has one flat item list (no stage branching).
+    """
+    items = module_items(session["checkpoint"])
+    answered = len(session.get("answers", []))
+    total = len(items)
+    if answered >= total:
+        return None, answered, total
+    return items[answered], answered + 1, total
+
+
 def public_item(item: dict) -> dict:
     """Strip answer_key/scenario/hint text before an item ever reaches the
     client -- only hintCount (how many hints exist) goes out up front, so

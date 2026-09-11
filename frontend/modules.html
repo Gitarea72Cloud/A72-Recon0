@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modules — A72-Recon0</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  .modwrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 100px; }
+  .modwrap h1 { font-size: 26px; margin-bottom: 6px; }
+
+  .notif-panel { margin-bottom: 26px; }
+  .notif-toggle {
+    display: inline-flex; align-items: center; gap: 8px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
+    font-size: 13.5px; font-weight: 600; cursor: pointer;
+  }
+  .notif-count {
+    background: var(--danger); color: #fff; border-radius: 999px; font-size: 11px;
+    font-weight: 700; padding: 1px 7px; min-width: 18px; text-align: center;
+  }
+  .notif-list { margin-top: 10px; }
+  .notif-item {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 8px; font-size: 13.5px; cursor: pointer;
+  }
+  .notif-item.unread { border-color: var(--accent); background: var(--accent-soft); }
+  .notif-item .meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+  .module-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px; margin-bottom: 12px;
+  }
+  .module-card.locked { opacity: .55; }
+  .module-card .order { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+  .module-card h3 { font-size: 15.5px; margin: 2px 0 4px; }
+  .module-card .dates { font-size: 12.5px; color: var(--muted); }
+  .status-pill {
+    font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .status-pill.locked { background: var(--surface-2); color: var(--muted); }
+  .status-pill.unlocked { background: var(--accent-soft); color: var(--accent-hover); }
+  .status-pill.in_progress { background: var(--basic-soft); color: var(--basic); }
+  .status-pill.done { background: var(--ok); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">A72<span>-Recon0</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="help.html">Help</a>
+    <a href="modules.html" class="active">Modules</a>
+    <span id="authNav"></span>
+  </nav>
+</div>
+
+<main>
+  <div class="modwrap">
+    <h1>Your modules</h1>
+    <p class="muted">Follow-up assessments unlock here as your instructor opens each module. Same rules as the placement test — hints cost a little credit, but nothing here affects your track.</p>
+
+    <div class="notif-panel">
+      <button class="notif-toggle" id="notifToggle">
+        Notifications <span class="notif-count" id="notifCount" hidden>0</span>
+      </button>
+      <div class="notif-list" id="notifList" hidden></div>
+    </div>
+
+    <div id="app"><p class="muted">Loading…</p></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const app = document.getElementById("app");
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+
+  const STATUS_LABEL = {
+    locked: "Locked", unlocked: "Not started", in_progress: "In progress", done: "Done",
+  };
+
+  function renderModules(modules) {
+    if (!modules.length) {
+      app.innerHTML = '<p class="muted">No modules published yet.</p>';
+      return;
+    }
+    app.innerHTML = modules.map((m) => {
+      const locked = m.status === "locked";
+      const label = STATUS_LABEL[m.status] || m.status;
+      const scoreText = m.status === "done" && m.score != null ? " — " + m.score + "%" : "";
+      const btn = locked
+        ? '<button class="btn btn-secondary" disabled>Locked</button>'
+        : `<a class="btn btn-primary" href="test.html?module=${encodeURIComponent(m.moduleId)}&title=${encodeURIComponent(m.title)}">` +
+          (m.status === "done" ? "View" : m.status === "in_progress" ? "Continue" : "Start") + "</a>";
+      return `
+        <div class="module-card ${locked ? "locked" : ""}">
+          <div>
+            <div class="order">Module ${String(m.order).padStart(2, "0")} · ${esc(m.dateRange || "")}</div>
+            <h3>${esc(m.title)}</h3>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="status-pill ${m.status}">${label}${scoreText}</span>
+            ${btn}
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  async function loadModules() {
+    app.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const data = await A72.apiFetch("/modules");
+      renderModules(data.modules);
+    } catch (err) {
+      app.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+    }
+  }
+
+  function renderNotifications(list) {
+    const listEl = document.getElementById("notifList");
+    if (!list.length) {
+      listEl.innerHTML = '<p class="muted" style="font-size:13px">No notifications yet.</p>';
+      return;
+    }
+    listEl.innerHTML = list.map((n) => `
+      <div class="notif-item ${n.isRead ? "" : "unread"}" data-id="${n.notificationId}">
+        <div>${esc(n.title)}</div>
+        <div class="meta">${esc(n.body)}</div>
+      </div>`).join("");
+    listEl.querySelectorAll(".notif-item").forEach((el) => {
+      el.addEventListener("click", async () => {
+        if (!el.classList.contains("unread")) return;
+        el.classList.remove("unread");
+        try { await A72.markNotificationRead(el.dataset.id); } catch (e) { /* non-critical */ }
+        refreshNotifCount();
+      });
+    });
+  }
+
+  async function refreshNotifCount() {
+    try {
+      const data = await A72.getNotifications();
+      const countEl = document.getElementById("notifCount");
+      if (data.unread > 0) {
+        countEl.hidden = false;
+        countEl.textContent = data.unread;
+      } else {
+        countEl.hidden = true;
+      }
+      renderNotifications(data.notifications);
+    } catch (e) { /* non-critical */ }
+  }
+
+  document.getElementById("notifToggle").addEventListener("click", () => {
+    const listEl = document.getElementById("notifList");
+    listEl.hidden = !listEl.hidden;
+  });
+
+  (async function init() {
+    const signedIn = await A72.isSignedIn();
+    if (!signedIn) { A72.redirectToSignIn("modules.html"); return; }
+    A72.renderAuthNav(document.getElementById("authNav"));
+    loadModules();
+    refreshNotifCount();
+  })();
+})();
+</script>
+</body>
+</html>

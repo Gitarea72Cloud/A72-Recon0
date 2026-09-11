@@ -134,6 +134,44 @@
     return body;
   }
 
+  function getNotifications() {
+    return apiFetch("/notifications");
+  }
+
+  function markNotificationRead(notificationId) {
+    return apiFetch("/notifications/" + encodeURIComponent(notificationId) + "/read", { method: "POST" });
+  }
+
+  // Dependency-free inline-SVG line chart -- points: [{label, value}],
+  // value 0-100. Used for both the admin cohort-progress chart and a
+  // student's own "progress over time" chart; no charting library, in
+  // keeping with the rest of this app's no-build-step vanilla JS.
+  function renderLineChart(points, opts) {
+    opts = opts || {};
+    const w = opts.width || 560, h = opts.height || 160, pad = 30;
+    if (!points || !points.length) {
+      return '<p class="muted" style="font-size:13px">Not enough data yet.</p>';
+    }
+    const stepX = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
+    const y = (v) => h - pad - (Math.max(0, Math.min(100, v)) / 100) * (h - pad * 2);
+    const coords = points.map((p, i) => [pad + i * stepX, y(p.value)]);
+    const path = coords.map((c, i) => (i === 0 ? "M" : "L") + c[0].toFixed(1) + "," + c[1].toFixed(1)).join(" ");
+    const dots = coords.map((c, i) =>
+      '<circle cx="' + c[0].toFixed(1) + '" cy="' + c[1].toFixed(1) + '" r="3.5" fill="var(--accent)">' +
+      "<title>" + points[i].label + ": " + points[i].value + "%</title></circle>"
+    ).join("");
+    const labels = coords.map((c, i) =>
+      '<text x="' + c[0].toFixed(1) + '" y="' + (h - 6) + '" font-size="9" text-anchor="middle" fill="var(--muted)">' +
+      points[i].label + "</text>"
+    ).join("");
+    const gridlines = [0, 25, 50, 75, 100].map((v) =>
+      '<line x1="' + pad + '" x2="' + (w - pad) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) +
+      '" stroke="var(--line)" stroke-width="1"/>'
+    ).join("");
+    return '<svg viewBox="0 0 ' + w + " " + h + '" style="width:100%;height:' + h + 'px">' +
+      gridlines + '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots + labels + "</svg>";
+  }
+
   function redirectToSignIn(next) {
     const n = next || (location.pathname.split("/").pop() || "index.html");
     location.href = "signin.html?next=" + encodeURIComponent(n);
@@ -163,6 +201,6 @@
   window.A72 = {
     userPool, getCurrentUser, getIdToken, isSignedIn, isInstructor, signOut,
     signIn, completeNewPassword, apiFetch, redirectToSignIn, renderAuthNav,
-    getCohortLabel,
+    getCohortLabel, getNotifications, markNotificationRead, renderLineChart,
   };
 })();

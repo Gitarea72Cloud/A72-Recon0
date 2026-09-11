@@ -6,7 +6,7 @@
 <title>Student profile — A72-Recon0</title>
 <link rel="stylesheet" href="theme.css">
 <style>
-  .adminwrap { max-width: 780px; margin: 0 auto; padding: 32px 24px 100px; }
+  .adminwrap { max-width: 860px; margin: 0 auto; padding: 32px 24px 100px; }
   .backlink { font-size: 13.5px; margin-bottom: 18px; display: inline-block; }
   .profilehead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
   .profilehead h1 { font-size: 22px; margin: 0; }
@@ -21,6 +21,18 @@
   table.datatable td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
   .tblwrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; overflow-x: auto; margin-bottom: 10px; }
   .ok-dot { color: var(--ok); } .bad-dot { color: var(--danger); }
+  .section { margin: 30px 0; }
+  .section h2 { font-size: 15px; margin-bottom: 10px; }
+  .module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .module-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .module-tile .order { font-size: 11px; color: var(--muted); }
+  .module-tile .title { font-size: 13px; font-weight: 600; margin: 2px 0 6px; }
+  .module-tile .status-pill { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .module-tile .status-pill.locked { background: var(--surface-2); color: var(--muted); }
+  .module-tile .status-pill.not_started { background: var(--accent-soft); color: var(--accent-hover); }
+  .module-tile .status-pill.in_progress { background: var(--basic-soft); color: var(--basic); }
+  .module-tile .status-pill.done { background: var(--ok); color: #fff; }
+  .chart-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; }
 </style>
 </head>
 <body>
@@ -49,67 +61,112 @@
   const app = document.getElementById("app");
   const studentId = new URLSearchParams(location.search).get("id");
 
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
   function fmtDuration(secs) {
     if (secs == null) return "—";
     return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
   }
   function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : "—"; }
 
+  const STATUS_LABEL = { locked: "Locked", not_started: "Not started", in_progress: "In progress", done: "Done" };
+
   async function render() {
     const p = await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId));
-    const domainRows = Object.keys(p.domainScores || {})
-      .filter((k) => k !== "_overall")
-      .map((k) => `<div class="stat"><div class="v">${p.domainScores[k]}%</div><div class="l">${k.replace(/_/g, " ")}</div></div>`)
-      .join("");
+    const placement = p.placement;
+    const modules = Object.values(p.modules || {}).sort((a, b) => (a.order || 0) - (b.order || 0));
 
-    const answerRows = (p.answers || []).map((a) => `
+    const domainRows = placement ? Object.keys(placement.domainScores || {})
+      .filter((k) => k !== "_overall")
+      .map((k) => `<div class="stat"><div class="v">${placement.domainScores[k]}%</div><div class="l">${k.replace(/_/g, " ")}</div></div>`)
+      .join("") : "";
+
+    const answerRows = placement ? (placement.answers || []).map((a) => `
       <tr>
         <td class="mono">${a.itemId}</td>
         <td>${a.domain.replace(/_/g, " ")}</td>
         <td>${a.correct ? '<span class="ok-dot">&#10003; correct</span>' : '<span class="bad-dot">&#10007; wrong</span>'}</td>
         <td>${a.hintsUsed || 0}</td>
         <td>${Math.round((a.credit ?? (a.correct ? 1 : 0)) * 100)}%</td>
-      </tr>`).join("");
+      </tr>`).join("") : "";
+
+    const moduleTiles = modules.map((m) => `
+      <div class="module-tile">
+        <div class="order">Module ${String(m.order).padStart(2, "0")}</div>
+        <div class="title">${esc(m.title)}</div>
+        <span class="status-pill ${m.status}">${STATUS_LABEL[m.status] || m.status}${m.status === "done" && m.compositeScore != null ? " — " + m.compositeScore + "%" : ""}</span>
+      </div>`).join("");
+
+    const progressPoints = [];
+    if (placement && placement.status === "done") {
+      progressPoints.push({ label: "Plc", value: placement.compositeScore || 0 });
+    }
+    modules.filter((m) => m.status === "done" && m.compositeScore != null)
+      .forEach((m) => progressPoints.push({ label: "M" + String(m.order).padStart(2, "0"), value: m.compositeScore }));
 
     app.innerHTML = `
       <a href="admin.html" class="backlink">&larr; Back to dashboard</a>
       <div class="profilehead">
         <h1>${p.email}</h1>
-        ${p.status === "done" ? '<span class="badge ' + (p.track === "Advanced" ? "advanced" : "basic") + '">' + p.track + " track</span>" : '<span class="muted">Test in progress</span>'}
+        ${placement && placement.status === "done" ? '<span class="badge ' + (placement.track === "Advanced" ? "advanced" : "basic") + '">' + placement.track + " track</span>" : '<span class="muted">' + (placement ? "Placement in progress" : "Placement not started") + '</span>'}
       </div>
 
-      <div class="stats">
-        <div class="stat"><div class="v">${p.compositeScore != null ? p.compositeScore + "%" : "—"}</div><div class="l">Composite score</div></div>
-        ${domainRows}
-        <div class="stat"><div class="v">${fmtDuration(p.durationSeconds)}</div><div class="l">Time taken</div></div>
-        <div class="stat"><div class="v">${p.hintsUsedTotal || 0}</div><div class="l">Hints used</div></div>
+      ${placement ? `
+        <div class="stats">
+          <div class="stat"><div class="v">${placement.compositeScore != null ? placement.compositeScore + "%" : "—"}</div><div class="l">Composite score</div></div>
+          ${domainRows}
+          <div class="stat"><div class="v">${fmtDuration(placement.durationSeconds)}</div><div class="l">Time taken</div></div>
+          <div class="stat"><div class="v">${placement.hintsUsedTotal || 0}</div><div class="l">Hints used</div></div>
+        </div>
+        ${placement.recommendation ? `<div class="rec-card"><h3>Suggested read</h3><p style="margin:0">${placement.recommendation}</p></div>` : ""}
+        <p class="muted" style="font-size:13px">Started ${fmtDate(placement.startedAt)}${placement.completedAt ? " · completed " + fmtDate(placement.completedAt) : ""}</p>
+      ` : '<p class="muted">This student hasn\'t started the placement test yet.</p>'}
+
+      <div class="section">
+        <h2>Progress over time</h2>
+        <div class="chart-card">${A72.renderLineChart(progressPoints)}</div>
       </div>
 
-      ${p.recommendation ? `<div class="rec-card"><h3>Suggested read</h3><p style="margin:0">${p.recommendation}</p></div>` : ""}
+      <div class="section">
+        <h2>Modules</h2>
+        <div class="module-grid">${moduleTiles || '<p class="muted">No modules seeded yet.</p>'}</div>
+      </div>
 
-      <p class="muted" style="font-size:13px">Started ${fmtDate(p.startedAt)}${p.completedAt ? " · completed " + fmtDate(p.completedAt) : ""}</p>
-
-      <h3 style="font-size:15px;margin:20px 0 10px">Answer history</h3>
-      <div class="tblwrap"><table class="datatable">
-        <thead><tr><th>Item</th><th>Domain</th><th>Result</th><th>Hints</th><th>Credit</th></tr></thead>
-        <tbody>${answerRows || '<tr><td colspan="5" class="muted">No answers yet.</td></tr>'}</tbody>
-      </table></div>
+      ${placement ? `
+        <h3 style="font-size:15px;margin:20px 0 10px">Placement answer history</h3>
+        <div class="tblwrap"><table class="datatable">
+          <thead><tr><th>Item</th><th>Domain</th><th>Result</th><th>Hints</th><th>Credit</th></tr></thead>
+          <tbody>${answerRows || '<tr><td colspan="5" class="muted">No answers yet.</td></tr>'}</tbody>
+        </table></div>
+      ` : ""}
 
       <div class="card" style="margin-top:24px">
-        <h3 style="margin:0 0 6px;font-size:14px">Reset this student's test</h3>
-        <p class="muted" style="font-size:13px;margin-bottom:14px">Deletes their placement session and result so they can take it again from question 1. Use this only when there's a real reason to let them retake it — it can't be undone.</p>
-        <button class="btn btn-secondary" id="resetBtn">Reset test for this student</button>
+        <h3 style="margin:0 0 6px;font-size:14px">Reset a session for this student</h3>
+        <p class="muted" style="font-size:13px;margin-bottom:14px">Deletes the selected session and result so they can take it again from question 1. Use this only when there's a real reason to let them retake it — it can't be undone.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="resetCheckpoint" style="background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:9px 11px;border-radius:8px;font-size:13.5px">
+            <option value="placement">Placement</option>
+            ${modules.map((m) => `<option value="${m.moduleId}">Module ${String(m.order).padStart(2, "0")} — ${esc(m.title)}</option>`).join("")}
+          </select>
+          <button class="btn btn-secondary" id="resetBtn">Reset selected session</button>
+        </div>
         <div id="resetMsg" style="margin-top:10px"></div>
       </div>
     `;
 
     document.getElementById("resetBtn").addEventListener("click", async () => {
-      if (!confirm(`Reset the placement test for ${p.email}? This deletes their result and can't be undone.`)) return;
+      const checkpoint = document.getElementById("resetCheckpoint").value;
+      if (!confirm(`Reset this session for ${p.email}? This deletes their result and can't be undone.`)) return;
       const btn = document.getElementById("resetBtn");
       const msg = document.getElementById("resetMsg");
       btn.disabled = true;
       try {
-        await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId) + "/reset", { method: "POST" });
+        await A72.apiFetch("/admin/students/" + encodeURIComponent(studentId) + "/reset", {
+          method: "POST", body: JSON.stringify({ checkpoint }),
+        });
         msg.innerHTML = '<div class="alert alert-info">Done — they can start a fresh attempt next time they sign in.</div>';
       } catch (err) {
         msg.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";

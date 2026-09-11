@@ -138,7 +138,37 @@ for either:
    involved, since it's computed directly from what Bedrock's own
    response says it billed.
 
-## 4. Push to main
+## 4. One-time: verify the sender identity for module-unlock emails
+
+When an instructor unlocks a module assessment, every student gets an
+in-app notification plus a best-effort email. The in-app half needs no
+setup (it's just DynamoDB), but the email half needs a one-time,
+console/email-click step, same shape as the Bedrock step above:
+
+1. **Deploy the sender identity** (`bootstrap/ses-notification-identity.yaml`)
+   to **eu-west-1 specifically** — Amazon SES isn't available in
+   eu-south-2 at all (same kind of region quirk as the Budgets template
+   needing us-east-1):
+   ```bash
+   aws cloudformation deploy \
+     --template-file bootstrap/ses-notification-identity.yaml \
+     --stack-name a72-recon0-ses-notifications \
+     --region eu-west-1 \
+     --parameter-overrides SenderEmail=morillasfj@gmail.com
+   ```
+2. **Click the confirmation link** AWS emails to that address — nothing
+   sends until it's clicked.
+3. **Known limitation:** new SES accounts start in the "sandbox," which
+   only delivers to *other* verified addresses until AWS grants
+   production access (Account dashboard → "Request production access,"
+   self-service — not the same as the account-verification gates hit
+   elsewhere in this project). Until then, emails to real students will
+   silently no-op (caught, logged nowhere, never raises) — **the in-app
+   notification still lands regardless**, so the feature works end to
+   end either way; requesting production access is a separate,
+   non-blocking follow-up whenever it's convenient.
+
+## 5. Push to main
 
 Every push to `main` now runs `.github/workflows/deploy.yml`: `sam build`,
 `sam deploy` to `eu-south-2`, syncs `frontend/` to the resulting S3
@@ -146,13 +176,14 @@ bucket, then invalidates the CloudFront cache (skipped automatically if
 `CLOUDFRONT_DISTRIBUTION_ID` isn't set yet). Watch it under the repo's
 **Actions** tab.
 
-## 5. Smoke-test it
+## 6. Smoke-test it
 
 ```bash
 aws cloudformation describe-stacks --stack-name a72-recon0-dev \
   --region eu-south-2 --query "Stacks[0].Outputs" --output table
 
 python3 scripts/seed_questions.py --table a72-recon0-dev --region eu-south-2
+python3 scripts/seed_module_questions.py --table a72-recon0-dev --region eu-south-2
 ```
 
 Then create yourself a Cognito user (`aws cognito-idp admin-create-user

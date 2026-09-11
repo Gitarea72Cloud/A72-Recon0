@@ -51,6 +51,7 @@ def finalize(student: str, session_id: str, track: str, domain_scores: dict):
         "PK": f"RESULT#{session_id}",
         "SK": "SUMMARY",
         "student_id": student,
+        "checkpoint": "placement",
         "composite_score": domain_scores.get("_overall", 0.0),
         "domain_scores": domain_scores,
         "track": track,
@@ -63,6 +64,44 @@ def finalize(student: str, session_id: str, track: str, domain_scores: dict):
         {":s": "done", ":t": track, ":ca": decided_at},
     )
     return result
+
+
+def finalize_module(student: str, session_id: str, checkpoint: str, domain_scores: dict):
+    """Module assessments are diagnostic, not a Basic/Advanced branch --
+    same RESULT shape minus `track`, tagged with the module's checkpoint
+    so admin queries can bucket it separately from placement.
+    """
+    decided_at = int(time.time())
+    result = {
+        "PK": f"RESULT#{session_id}",
+        "SK": "SUMMARY",
+        "student_id": student,
+        "checkpoint": checkpoint,
+        "composite_score": domain_scores.get("_overall", 0.0),
+        "domain_scores": domain_scores,
+        "decided_at": decided_at,
+    }
+    db.put_item(result)
+    db.update_item(
+        f"STUDENT#{student}", f"SESSION#{session_id}",
+        "SET stage = :s, completed_at = :ca",
+        {":s": "done", ":ca": decided_at},
+    )
+    return result
+
+
+def handle_module_answer(student: str, session_id: str, session: dict, checkpoint: str,
+                          correct: bool, credit: float, hints_used: int):
+    scores = scoring.score_domain_answers(session["answers"])
+    next_item, index, total = itembank.next_module_item(session)
+    if next_item:
+        return response(200, {
+            "done": False, "running_score": scores.get("_overall", 0.0),
+            "lastAnswerCorrect": correct, "lastAnswerCredit": credit, "lastAnswerHintsUsed": hints_used,
+            "item": itembank.public_item(next_item), "itemIndex": index, "totalItems": total,
+        })
+    finalize_module(student, session_id, checkpoint, scores)
+    return response(200, {"done": True, "lastAnswerCorrect": correct})
 
 
 def lambda_handler(event, context):
@@ -109,6 +148,10 @@ def lambda_handler(event, context):
         f"STUDENT#{student}", f"SESSION#{session_id}",
         "SET answers = :a", {":a": answers},
     )
+
+    checkpoint = session.get("checkpoint", "placement")
+    if checkpoint != "placement":
+        return handle_module_answer(student, session_id, session, checkpoint, correct, credit, hints_used)
 
     stage_answers = [a for a in answers if a["stage"] == session["stage"]]
     stage_scores = scoring.score_domain_answers(stage_answers)

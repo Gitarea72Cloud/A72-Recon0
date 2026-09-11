@@ -12,10 +12,19 @@ original /admin/questions + /admin/results pair):
   GET    /admin/students                    one row per student who has
                                               started or finished placement
   GET    /admin/students/{studentId}        full profile for one student
-  POST   /admin/students/{studentId}/reset  delete a student's placement
-                                              session so they can retake it
+  POST   /admin/students/{studentId}/reset  delete a student's session for
+                                              one checkpoint (body:
+                                              {checkpoint}, default
+                                              "placement") so they can retake it
   GET    /admin/feedback                    question feedback + exit survey
                                               responses submitted by students
+  GET    /admin/modules                     the 11 module assessments +
+                                              per-module stats (unlocked,
+                                              started, completed, avgScore)
+  PUT    /admin/modules/{moduleId}          edit a module (unlocked, title)
+                                              -- unlocking fans out an
+                                              in-app + best-effort email
+                                              notification to every student
   GET    /admin/questions                   full question bank (answer_key
                                               and hints included -- this is
                                               the one place that's true)
@@ -33,8 +42,9 @@ original /admin/questions + /admin/results pair):
 """
 import json
 import os
+import time
 import boto3
-from common import db, auth, scoring, question_gen
+from common import db, auth, scoring, question_gen, notifications
 
 HEADERS = {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
 
@@ -77,13 +87,118 @@ def _all_cognito_users() -> dict:
     return users
 
 
-def _cohort_data():
+def _instructor_subs() -> set:
+    """subs of every user in the `instructors` group -- used to exclude
+    instructors from module-unlock notification fan-out.
+    """
+    subs = set()
+    kwargs = {"UserPoolId": _USER_POOL_ID, "GroupName": "instructors"}
+    while True:
+        resp = _cognito.list_users_in_group(**kwargs)
+        for u in resp.get("Users", []):
+            attrs = {a["Name"]: a["Value"] for a in u.get("Attributes", [])}
+            if attrs.get("sub"):
+                subs.add(attrs["sub"])
+        token = resp.get("NextToken")
+        if not token:
+            break
+        kwargs["NextToken"] = token
+    return subs
+
+
+def _all_sessions_and_results():
+    """One unfiltered scan, covering every checkpoint (placement + every
+    module) -- the placement-only _cohort_data below is a thin filter on
+    top of this, so existing placement call sites stay byte-for-byte
+    unchanged while module-aware call sites can use this directly.
+    """
     items = db.scan_all()
-    sessions = [i for i in items if i["SK"].startswith("SESSION#") and i.get("checkpoint") == "placement"]
+    sessions = [i for i in items if i["SK"].startswith("SESSION#")]
     results = {i["PK"].replace("RESULT#", ""): i for i in items if i["PK"].startswith("RESULT#")}
     feedback = [i for i in items if i["PK"].startswith("FEEDBACK#")]
     surveys = [i for i in items if i["PK"].startswith("SURVEY#")]
     return sessions, results, feedback, surveys
+
+
+def _cohort_data():
+    sessions, results, feedback, surveys = _all_sessions_and_results()
+    placement_sessions = [s for s in sessions if s.get("checkpoint", "placement") == "placement"]
+    return placement_sessions, results, feedback, surveys
+
+
+def module_dashboard_stats() -> dict:
+    """moduleId -> {moduleId, title, order, unlocked, started, completed,
+    avgScore} -- joins MODULE_META with every module session/result.
+    Feeds both GET /admin/modules and the Overview cohort-trend chart.
+    """
+    sessions, results, _, _ = _all_sessions_and_results()
+    module_sessions = [s for s in sessions if str(s.get("checkpoint", "")).startswith("module-")]
+    modules_meta = {i["SK"]: i for i in db.query_partition("MODULE_META")}
+
+    stats = {}
+    for module_id, meta in modules_meta.items():
+        m_sessions = [s for s in module_sessions if s.get("checkpoint") == module_id]
+        done = [s for s in m_sessions if s.get("stage") == "done"]
+        scores = []
+        for s in done:
+            session_id = s["SK"].replace("SESSION#", "")
+            result = results.get(session_id)
+            if result and "composite_score" in result:
+                scores.append(result["composite_score"])
+        stats[module_id] = {
+            "moduleId": module_id,
+            "title": meta.get("title"),
+            "order": meta.get("order"),
+            "dateRange": meta.get("dateRange"),
+            "unlocked": meta.get("unlocked", False),
+            "started": len(m_sessions),
+            "completed": len(done),
+            "avgScore": round(sum(scores) / len(scores), 1) if scores else None,
+        }
+    return stats
+
+
+def modules_list():
+    stats = module_dashboard_stats()
+    rows = sorted(stats.values(), key=lambda m: m.get("order") or 0)
+    return response(200, {"modules": rows})
+
+
+def module_update(module_id: str, body: dict):
+    module = db.get_item("MODULE_META", module_id)
+    if not module:
+        return response(404, {"error": "unknown module"})
+
+    updates = {}
+    if "unlocked" in body:
+        updates["unlocked"] = bool(body["unlocked"])
+    if "title" in body and body["title"]:
+        updates["title"] = body["title"]
+    if not updates:
+        return response(400, {"error": "nothing to update"})
+
+    was_unlocked = module.get("unlocked", False)
+    set_parts = []
+    values = {}
+    for i, (k, v) in enumerate(updates.items()):
+        set_parts.append(f"{k} = :v{i}")
+        values[f":v{i}"] = v
+    if updates.get("unlocked") is True and not was_unlocked:
+        set_parts.append("unlockedAt = :ua")
+        values[":ua"] = int(time.time())
+    db.update_item("MODULE_META", module_id, "SET " + ", ".join(set_parts), values)
+
+    notified = 0
+    if updates.get("unlocked") is True and not was_unlocked:
+        title = updates.get("title", module.get("title"))
+        try:
+            users = _all_cognito_users()
+            instructor_subs = _instructor_subs()
+            notified = notifications.fan_out_module_unlock(module_id, title, users, instructor_subs)
+        except Exception:
+            notified = 0
+
+    return response(200, {"ok": True, "notified": notified})
 
 
 def _student_row(session: dict, results: dict, users: dict) -> dict:
@@ -165,6 +280,13 @@ def dashboard():
     except Exception:
         provisioned = None
 
+    module_stats = module_dashboard_stats()
+    module_performance = [
+        {"moduleId": m["moduleId"], "title": m["title"], "order": m["order"],
+         "avgScore": m["avgScore"], "completed": m["completed"]}
+        for m in sorted(module_stats.values(), key=lambda m: m.get("order") or 0)
+    ]
+
     return response(200, {
         "provisionedAccounts": provisioned,
         "totalStarted": total_started,
@@ -177,6 +299,7 @@ def dashboard():
         "itemStats": item_stats_list,
         "feedbackCount": len(feedback),
         "surveyCount": len(surveys),
+        "modulePerformance": module_performance,
     })
 
 
@@ -192,42 +315,74 @@ def students():
 
 
 def student_profile(student_id: str):
-    sessions, results, _, _ = _cohort_data()
-    student_sessions = [s for s in sessions if s["PK"] == f"STUDENT#{student_id}"]
-    if not student_sessions:
-        return response(404, {"error": "no placement session for this student"})
-
-    # Prefer a finalized session if one exists; otherwise the most recent
-    # in-progress one.
-    session = next((s for s in student_sessions if s.get("stage") == "done"), None) \
-        or max(student_sessions, key=lambda s: s.get("started_at", 0))
+    sessions, results, _, _ = _all_sessions_and_results()
+    all_student_sessions = [s for s in sessions if s["PK"] == f"STUDENT#{student_id}"]
+    if not all_student_sessions:
+        return response(404, {"error": "no sessions for this student"})
 
     try:
         users = _all_cognito_users()
     except Exception:
         users = {}
-    row = _student_row(session, results, users)
+    email = users.get(student_id, {}).get("email", student_id)
 
-    session_id = session["SK"].replace("SESSION#", "")
-    result = results.get(session_id)
-    recommendation = scoring.recommend(result["domain_scores"], result["track"]) if result else None
+    placement_sessions = [s for s in all_student_sessions if s.get("checkpoint", "placement") == "placement"]
+    placement = None
+    if placement_sessions:
+        # Prefer a finalized session if one exists; otherwise the most
+        # recent in-progress one.
+        session = next((s for s in placement_sessions if s.get("stage") == "done"), None) \
+            or max(placement_sessions, key=lambda s: s.get("started_at", 0))
+        row = _student_row(session, results, users)
+        session_id = session["SK"].replace("SESSION#", "")
+        result = results.get(session_id)
+        recommendation = scoring.recommend(result["domain_scores"], result["track"]) if result else None
+        placement = {**row, "answers": session.get("answers", []), "recommendation": recommendation}
 
-    return response(200, {**row, "answers": session.get("answers", []), "recommendation": recommendation})
+    modules_meta = {i["SK"]: i for i in db.query_partition("MODULE_META")}
+    module_sessions = [s for s in all_student_sessions if str(s.get("checkpoint", "")).startswith("module-")]
+    modules = {}
+    for module_id, meta in sorted(modules_meta.items(), key=lambda kv: kv[1].get("order") or 0):
+        m_sessions = [s for s in module_sessions if s.get("checkpoint") == module_id]
+        if not m_sessions:
+            modules[module_id] = {
+                "moduleId": module_id, "title": meta.get("title"), "order": meta.get("order"),
+                "status": "not_started" if meta.get("unlocked") else "locked",
+            }
+            continue
+        session = next((s for s in m_sessions if s.get("stage") == "done"), None) \
+            or max(m_sessions, key=lambda s: s.get("started_at", 0))
+        session_id = session["SK"].replace("SESSION#", "")
+        result = results.get(session_id)
+        modules[module_id] = {
+            "moduleId": module_id, "title": meta.get("title"), "order": meta.get("order"),
+            "status": "done" if session.get("stage") == "done" else "in_progress",
+            "compositeScore": result.get("composite_score") if result else None,
+            "startedAt": session.get("started_at"),
+            "completedAt": session.get("completed_at"),
+            "hintsUsed": sum(a.get("hintsUsed", 0) for a in session.get("answers", [])),
+            "answers": session.get("answers", []),
+        }
+
+    return response(200, {"studentId": student_id, "email": email, "placement": placement, "modules": modules})
 
 
-def reset_student(student_id: str):
+def reset_student(student_id: str, checkpoint: str = "placement"):
     items = db.query_partition(f"STUDENT#{student_id}")
     deleted = []
     for item in items:
         sk = item["SK"]
-        if sk.startswith("SESSION#") and item.get("checkpoint") == "placement":
+        if sk.startswith("SESSION#") and item.get("checkpoint", "placement") == checkpoint:
             result_session_id = sk.replace("SESSION#", "")
             if db.get_item(f"RESULT#{result_session_id}", "SUMMARY"):
                 db.delete_item(f"RESULT#{result_session_id}", "SUMMARY")
                 deleted.append(f"RESULT#{result_session_id}/SUMMARY")
             db.delete_item(item["PK"], sk)
             deleted.append(sk)
-        elif sk.startswith("TERMSTATE#"):
+        elif sk.startswith("TERMSTATE#") and checkpoint == "placement":
+            # TERMSTATE items aren't tagged with a checkpoint -- only
+            # today's terminal-type questions (placement) create them, so
+            # only a placement reset should clear them.
             db.delete_item(item["PK"], sk)
             deleted.append(sk)
     return response(200, {"ok": True, "deleted": deleted})
@@ -429,9 +584,13 @@ def lambda_handler(event, context):
     if route == "GET /admin/students/{studentId}":
         return student_profile(path_params.get("studentId"))
     if route == "POST /admin/students/{studentId}/reset":
-        return reset_student(path_params.get("studentId"))
+        return reset_student(path_params.get("studentId"), body.get("checkpoint", "placement"))
     if route == "GET /admin/feedback":
         return feedback_list()
+    if route == "GET /admin/modules":
+        return modules_list()
+    if route == "PUT /admin/modules/{moduleId}":
+        return module_update(path_params.get("moduleId"), body)
     if route == "GET /admin/questions":
         return questions_list()
     if route == "POST /admin/questions":

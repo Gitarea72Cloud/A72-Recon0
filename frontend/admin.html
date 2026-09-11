@@ -68,6 +68,23 @@
   .file-row { display: grid; grid-template-columns: 160px 1fr 32px; gap: 8px; margin-bottom: 8px; }
   .file-row input, .file-row textarea { font-size: 12.5px; }
   .file-row button { background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 16px; }
+
+  /* ---- modules tab ---- */
+  .module-admin-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px; margin-bottom: 12px;
+  }
+  .module-admin-card .order { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+  .module-admin-card h3 { font-size: 15.5px; margin: 2px 0 4px; }
+  .module-admin-card .stats { font-size: 12.5px; color: var(--muted); }
+  .lock-pill {
+    font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .lock-pill.locked { background: var(--surface-2); color: var(--muted); }
+  .lock-pill.unlocked { background: var(--ok); color: #fff; }
+  .chart-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; }
 </style>
 </head>
 <body>
@@ -89,6 +106,7 @@
       <div class="tab" data-tab="overview">Overview</div>
       <div class="tab" data-tab="students">Students</div>
       <div class="tab" data-tab="questions">Questions</div>
+      <div class="tab" data-tab="modules">Modules</div>
       <div class="tab" data-tab="feedback">Feedback</div>
     </div>
     <div id="app"><p class="muted">Loading…</p></div>
@@ -189,6 +207,19 @@
         <p class="muted" style="font-size:13px;margin-top:-6px">Grouped by domain, hardest first within each — low pass rate or high hint usage flags a question worth reviewing (or a topic the cohort needs more support on).</p>
         ${itemContainers || '<p class="muted">No answers recorded yet.</p>'}
       </div>
+
+      <div class="section">
+        <h2>Cohort progress across modules</h2>
+        <p class="muted" style="font-size:13px;margin-top:-6px">Average module-assessment score, in module order — how the cohort as a whole is trending through the programme.</p>
+        <div class="chart-card">
+          ${A72.renderLineChart(
+            (d.modulePerformance || []).filter((m) => m.avgScore != null).map((m) => ({
+              label: "M" + String(m.order).padStart(2, "0"), value: m.avgScore,
+            }))
+          )}
+        </div>
+      </div>
+
       <p class="muted" style="font-size:12.5px">${d.feedbackCount} question-feedback comment(s) and ${d.surveyCount} exit-survey response(s) — see the Feedback tab.</p>
     `;
   }
@@ -236,6 +267,18 @@
 
   // ---------------------------------------------------------------- Questions
   let allQuestions = [];
+  let allModules = [];
+
+  async function loadModulesMeta() {
+    if (allModules.length) return allModules;
+    try {
+      const data = await A72.apiFetch("/admin/modules");
+      allModules = data.modules;
+    } catch (e) {
+      allModules = [];
+    }
+    return allModules;
+  }
 
   function questionContainersHtml(list) {
     if (!list.length) return '<p class="muted">No questions match.</p>';
@@ -263,10 +306,12 @@
   }
 
   function wireQuestionRowActions() {
-    app.querySelectorAll("[data-edit]").forEach((a) => a.addEventListener("click", (e) => {
+    app.querySelectorAll("[data-edit]").forEach((a) => a.addEventListener("click", async (e) => {
       e.preventDefault();
       const [domain, itemId] = a.dataset.edit.split("/");
-      renderQuestionForm({ domain, itemId });
+      const full = allQuestions.find((q) => q.domain === domain && q.itemId === itemId)
+        || await A72.apiFetch(`/admin/questions/${domain}/${itemId}`);
+      renderQuestionForm(full);
     }));
     app.querySelectorAll("[data-delete]").forEach((a) => a.addEventListener("click", async (e) => {
       e.preventDefault();
@@ -275,6 +320,19 @@
       await A72.apiFetch(`/admin/questions/${domain}/${itemId}`, { method: "DELETE" });
       renderQuestionsList();
     }));
+  }
+
+  function splitContainersHtml(list) {
+    const placement = list.filter((q) => !q.domain.startsWith("module-"));
+    const modules = list.filter((q) => q.domain.startsWith("module-"));
+    let html = "";
+    if (placement.length || !modules.length) {
+      html += '<h2 style="font-size:14px;margin:0 0 10px">Placement domains</h2>' + questionContainersHtml(placement);
+    }
+    if (modules.length) {
+      html += '<h2 style="font-size:14px;margin:22px 0 10px">Module assessments</h2>' + questionContainersHtml(modules);
+    }
+    return html;
   }
 
   async function renderQuestionsList() {
@@ -291,7 +349,7 @@
         <div class="search-row" style="margin-bottom:0"><input id="qSearch" placeholder="Search by item id, prompt, or domain…"></div>
         <button class="btn btn-primary" id="newQBtn">+ New question</button>
       </div>
-      <div id="qContainers">${questionContainersHtml(allQuestions)}</div>
+      <div id="qContainers">${splitContainersHtml(allQuestions)}</div>
     `;
     wireQuestionRowActions();
     document.getElementById("newQBtn").addEventListener("click", () => renderQuestionForm(null));
@@ -300,7 +358,7 @@
       const filtered = term
         ? allQuestions.filter((q) => q.itemId.toLowerCase().includes(term) || q.domain.toLowerCase().includes(term) || q.prompt.toLowerCase().includes(term))
         : allQuestions;
-      document.getElementById("qContainers").innerHTML = questionContainersHtml(filtered);
+      document.getElementById("qContainers").innerHTML = splitContainersHtml(filtered);
       wireQuestionRowActions();
     });
   }
@@ -338,10 +396,18 @@
     return files;
   }
 
-  function renderQuestionForm(existing) {
+  async function renderQuestionForm(existing) {
     const isEdit = !!(existing && existing.domain && existing.itemId && existing.prompt !== undefined);
     const q = existing || {};
     const isTerminal = q.type ? q.type === "terminal" : true;
+    const modules = await loadModulesMeta();
+    const domainOptionsHtml =
+      `<optgroup label="Placement domains">` +
+        DOMAINS.map((d) => `<option value="${d}" ${d === q.domain ? "selected" : ""}>${d}</option>`).join("") +
+      `</optgroup>` +
+      (modules.length ? `<optgroup label="Module assessments">` +
+        modules.map((m) => `<option value="${m.moduleId}" ${m.moduleId === q.domain ? "selected" : ""}>Module ${String(m.order).padStart(2, "0")} — ${m.title}</option>`).join("") +
+      `</optgroup>` : "");
 
     app.innerHTML = `
       <div class="genbox">
@@ -360,7 +426,7 @@
         <h3 style="margin-top:0">${isEdit ? "Edit" : "New"} question</h3>
         <div class="field-row">
           <div><label>Domain</label>
-            <select id="fDomain" ${isEdit ? "disabled" : ""}>${DOMAINS.map((d) => `<option value="${d}" ${d === q.domain ? "selected" : ""}>${d}</option>`).join("")}</select>
+            <select id="fDomain" ${isEdit ? "disabled" : ""}>${domainOptionsHtml}</select>
           </div>
           <div><label>Item ID</label><input id="fItemId" value="${esc(q.itemId || "")}" ${isEdit ? "disabled" : ""} placeholder="e.g. linux-011"></div>
         </div>
@@ -431,8 +497,10 @@
       const type = document.getElementById("fType").value;
       const answerRaw = document.getElementById("fAnswer").value.trim();
       const answerParts = answerRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      const domain = document.getElementById("fDomain").value;
       const body = {
-        domain: document.getElementById("fDomain").value,
+        domain,
+        checkpoint: domain.startsWith("module-") ? domain : "placement",
         itemId: document.getElementById("fItemId").value.trim(),
         type,
         prompt: document.getElementById("fPrompt").value.trim(),
@@ -454,6 +522,49 @@
     });
   }
 
+  // ---------------------------------------------------------------- Modules
+  async function renderModulesTab() {
+    app.innerHTML = '<p class="muted">Loading…</p>';
+    let modules;
+    try {
+      const data = await A72.apiFetch("/admin/modules");
+      modules = data.modules;
+    } catch (err) {
+      app.innerHTML = '<div class="alert alert-error">' + err.message + "</div>";
+      return;
+    }
+    allModules = modules;
+    app.innerHTML = modules.length
+      ? modules.map((m) => `
+        <div class="module-admin-card">
+          <div>
+            <div class="order">Module ${String(m.order).padStart(2, "0")} · ${esc(m.dateRange || "")}</div>
+            <h3>${esc(m.title)}</h3>
+            <div class="stats">${m.started} started · ${m.completed} completed${m.avgScore != null ? " · avg " + m.avgScore + "%" : ""}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="lock-pill ${m.unlocked ? "unlocked" : "locked"}">${m.unlocked ? "Unlocked" : "Locked"}</span>
+            <button class="btn btn-secondary" data-toggle="${m.moduleId}" data-unlocked="${m.unlocked}">${m.unlocked ? "Lock" : "Unlock"}</button>
+          </div>
+        </div>`).join("")
+      : '<p class="muted">No modules seeded yet — run scripts/seed_module_questions.py.</p>';
+
+    app.querySelectorAll("[data-toggle]").forEach((btn) => btn.addEventListener("click", async () => {
+      const moduleId = btn.dataset.toggle;
+      const currentlyUnlocked = btn.dataset.unlocked === "true";
+      const next = !currentlyUnlocked;
+      if (next && !confirm("Unlock this module? Every student will get an in-app notification (and email, if delivery is set up).")) return;
+      btn.disabled = true;
+      try {
+        await A72.apiFetch(`/admin/modules/${moduleId}`, { method: "PUT", body: JSON.stringify({ unlocked: next }) });
+        renderModulesTab();
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+      }
+    }));
+  }
+
   // ---------------------------------------------------------------- Tabs
   const TABS = { overview: renderOverview, students: renderStudents, feedback: renderFeedback };
 
@@ -461,6 +572,10 @@
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
     if (name === "questions") {
       renderQuestionsList();
+      return;
+    }
+    if (name === "modules") {
+      renderModulesTab();
       return;
     }
     app.innerHTML = '<p class="muted">Loading…</p>';

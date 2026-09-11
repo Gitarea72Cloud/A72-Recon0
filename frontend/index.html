@@ -24,6 +24,10 @@
   .step .num::before { content: counter(step); }
   .step h3 { font-size: 16px; margin: 0 0 4px; }
   .step p { font-size: 14.5px; color: var(--muted); margin: 0; }
+  .notif-count {
+    display: inline-block; margin-left: 5px; background: var(--danger); color: #fff;
+    border-radius: 999px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; vertical-align: middle;
+  }
 </style>
 </head>
 <body>
@@ -33,6 +37,7 @@
   <nav>
     <a href="index.html" class="active">Home</a>
     <a href="help.html">Help</a>
+    <a href="modules.html">Modules<span class="notif-count" id="modulesNotifCount" hidden></span></a>
     <span id="authNav"></span>
   </nav>
 </div>
@@ -87,6 +92,17 @@
 
   A72.getCohortLabel().then((label) => {
     if (label) document.getElementById("cohortLabel").textContent = "placement · " + label;
+  });
+
+  A72.isSignedIn().then((signedIn) => {
+    if (!signedIn) return;
+    A72.getNotifications().then((data) => {
+      if (data.unread > 0) {
+        const el = document.getElementById("modulesNotifCount");
+        el.textContent = data.unread;
+        el.hidden = false;
+      }
+    }).catch(() => {});
   });
 
   document.getElementById("startBtn").addEventListener("click", async (e) => {

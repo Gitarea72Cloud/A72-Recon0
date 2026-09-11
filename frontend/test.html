@@ -104,6 +104,7 @@
   <nav>
     <a href="index.html">Home</a>
     <a href="help.html">Help</a>
+    <a href="modules.html">Modules</a>
     <span id="authNav"></span>
   </nav>
 </div>
@@ -127,6 +128,10 @@
   let timerStart = null;
   let timerInterval = null;
   let hintsUnlocked = 0;
+
+  const urlParams = new URLSearchParams(location.search);
+  const moduleId = urlParams.get("module");
+  const moduleTitle = urlParams.get("title") || "this module";
 
   const SHELL_CONFIG = {
     linux_cli: {
@@ -276,12 +281,14 @@
 
   function renderBegin() {
     testActive = false;
-    app.innerHTML =
-      '<div class="begin">' +
-      '<h1>Ready when you are</h1>' +
-      '<p>35 questions — 10 Linux, 10 PowerShell, and 15 quick security-concept questions. Hints are available if you get stuck, but they cost credit. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
-      '<button class="btn btn-primary" id="beginBtn">Begin the test</button>' +
-      "</div>";
+    const copy = moduleId
+      ? '<h1>' + moduleTitle + '</h1>' +
+        '<p>A short assessment covering what you just learned in this module. Hints are available if you get stuck, but they cost credit. Once you start, your result is final.</p>' +
+        '<button class="btn btn-primary" id="beginBtn">Begin the assessment</button>'
+      : '<h1>Ready when you are</h1>' +
+        '<p>35 questions — 10 Linux, 10 PowerShell, and 15 quick security-concept questions. Hints are available if you get stuck, but they cost credit. Once you start, your result is final — see the <a href="help.html">help page</a> for the full rules.</p>' +
+        '<button class="btn btn-primary" id="beginBtn">Begin the test</button>';
+    app.innerHTML = '<div class="begin">' + copy + "</div>";
     document.getElementById("beginBtn").addEventListener("click", begin);
   }
 
@@ -296,9 +303,12 @@
   async function begin() {
     app.innerHTML = '<div class="begin"><p class="muted">Starting…</p></div>';
     try {
-      const res = await A72.apiFetch("/session/start", { method: "POST" });
+      const body = moduleId ? { moduleId } : {};
+      const res = await A72.apiFetch("/session/start", { method: "POST", body: JSON.stringify(body) });
       if (!res.item) {
-        renderError("No questions are loaded yet — ask your instructor to seed the question bank.");
+        renderError(moduleId
+          ? "No questions are loaded for this module yet — check back with your instructor."
+          : "No questions are loaded yet — ask your instructor to seed the question bank.");
         return;
       }
       sessionId = res.sessionId;
@@ -307,6 +317,10 @@
     } catch (err) {
       if (err.status === 409 && err.body && err.body.sessionId) {
         showResult(err.body.sessionId);
+      } else if (err.status === 403) {
+        renderError(moduleId ? "This module isn't unlocked yet — check back once your instructor opens it." : err.message);
+      } else if (err.status === 404 && moduleId) {
+        renderError("This module doesn't exist.");
       } else {
         renderError("Couldn't start the test: " + err.message, { retry: true });
       }
@@ -526,13 +540,17 @@
   async function showResult(sid) {
     testActive = false;
     stopInactivityMonitor();
-    // Deliberately no track or scores here -- that's placement info for
-    // the instructor dashboard (/admin/students/{id}), not the student.
+    // Deliberately no track or scores here -- that's instructor-facing
+    // info (/admin/students/{id}), not shown to the student.
+    const blurb = moduleId
+      ? "Thanks for working through it — your instructor can see your results and will use them to follow up if you need support."
+      : "Thanks for working through it — your instructor will use this to help place you at the right pace for Module 1.";
+    const backLink = moduleId ? "modules.html" : "index.html";
     app.innerHTML =
       '<div class="result">' +
         '<h1>You’re all set</h1>' +
-        '<p class="blurb">Thanks for working through it — your instructor will use this to help place you at the right pace for Module 1.</p>' +
-        '<a href="index.html" class="btn btn-secondary">Back to home</a>' +
+        '<p class="blurb">' + blurb + '</p>' +
+        '<a href="' + backLink + '" class="btn btn-secondary">Back to ' + (moduleId ? "modules" : "home") + '</a>' +
       '</div>';
   }
 

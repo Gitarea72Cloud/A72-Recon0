@@ -266,6 +266,8 @@ Resources:
         Variables:
           USER_POOL_ID: !Ref UserPool
           BEDROCK_MAX_SPEND_USD: "20"
+          NOTIFICATION_FROM_EMAIL: morillasfj@gmail.com
+          NOTIFICATION_SES_REGION: eu-west-1
       Layers:
         - !Ref CommonLayer
       Policies:
@@ -275,6 +277,7 @@ Resources:
             - Effect: Allow
               Action:
                 - cognito-idp:ListUsers
+                - cognito-idp:ListUsersInGroup
               Resource: !GetAtt UserPool.Arn
             - Sid: BedrockQuestionGeneration
               Effect: Allow
@@ -287,6 +290,15 @@ Resources:
                 # EU region), scoped to this one model, not all of Bedrock.
                 - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0
                 - !Sub arn:aws:bedrock:eu-*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+            - Sid: SESNotifications
+              Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              # SES lives in eu-west-1 regardless of this stack's own
+              # region (eu-south-2 doesn't have SES at all) -- see
+              # bootstrap/ses-notification-identity.yaml.
+              Resource: !Sub arn:aws:ses:eu-west-1:${AWS::AccountId}:identity/morillasfj@gmail.com
       Events:
         Questions:
           Type: HttpApi
@@ -354,6 +366,60 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /admin/feedback
             Method: GET
+        ModulesList:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/modules
+            Method: GET
+        ModuleUpdate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/modules/{moduleId}
+            Method: PUT
+
+  ModulesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/modules/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /modules
+            Method: GET
+
+  NotificationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/notifications/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        List:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /notifications
+            Method: GET
+        MarkRead:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /notifications/{notificationId}/read
+            Method: POST
 
   SubmitFeedbackFunction:
     Type: AWS::Serverless::Function
