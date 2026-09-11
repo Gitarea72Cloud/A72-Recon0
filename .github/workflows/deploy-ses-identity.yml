@@ -33,6 +33,18 @@ jobs:
           role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.SES_REGION }}
 
+      - name: Clean up a failed prior stack, if any
+        run: |
+          STATUS=$(aws cloudformation describe-stacks \
+            --stack-name a72-recon0-ses-notifications \
+            --region "${{ env.SES_REGION }}" \
+            --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "MISSING")
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Stack is stuck in ROLLBACK_COMPLETE -- deleting so it can be recreated."
+            aws cloudformation delete-stack --stack-name a72-recon0-ses-notifications --region "${{ env.SES_REGION }}"
+            aws cloudformation wait stack-delete-complete --stack-name a72-recon0-ses-notifications --region "${{ env.SES_REGION }}"
+          fi
+
       - name: Deploy SES email identity
         run: |
           aws cloudformation deploy \
