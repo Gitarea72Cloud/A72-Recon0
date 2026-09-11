@@ -1,22 +1,22 @@
+# One-time, account-side sender identity for module-unlock email
+# notifications (see layer/python/common/notifications.py). MUST be
+# deployed to eu-west-1 specifically -- Amazon SES isn't available in
+# eu-south-2, the region this project's main stack deploys to (same
+# kind of region quirk as bootstrap/bedrock-cost-budget.yaml needing
+# us-east-1). The Lambda's boto3 SES client is pinned to
+# NOTIFICATION_SES_REGION (eu-west-1) so this is a normal cross-region
+# API call, nothing region-locked on the compute side.
+#
+# Verifying a single email address (rather than a whole domain) is the
+# quickest path here -- AWS emails SenderEmail a confirmation link;
+# nothing sends until that link is clicked. New SES accounts also start
+# in the "sandbox": email only delivers to OTHER verified addresses
+# until AWS grants production access (Account dashboard -> "Request
+# production access", self-service, not the same as the
+# account-verification gates hit elsewhere in this project). Until then,
+# in-app notifications still work regardless -- see DEPLOY.md.
 AWSTemplateFormatVersion: '2010-09-09'
-Description: >
-  One-time, account-side sender identity for module-unlock email
-  notifications (see layer/python/common/notifications.py). MUST be
-  deployed to eu-west-1 specifically -- Amazon SES isn't available in
-  eu-south-2, the region this project's main stack deploys to (same
-  kind of region quirk as bootstrap/bedrock-cost-budget.yaml needing
-  us-east-1). The Lambda's boto3 SES client is pinned to
-  NOTIFICATION_SES_REGION (eu-west-1) so this is a normal cross-region
-  API call, nothing region-locked on the compute side.
-
-  Verifying a single email address (rather than a whole domain) is the
-  quickest path here -- AWS emails SenderEmail a confirmation link;
-  nothing sends until that link is clicked. New SES accounts also start
-  in the "sandbox": email only delivers to OTHER verified addresses
-  until AWS grants production access (Account dashboard -> "Request
-  production access", self-service, not the same as the
-  account-verification gates hit elsewhere in this project). Until then,
-  in-app notifications still work regardless -- see DEPLOY.md.
+Description: One-time eu-west-1 SES sender identity for module-unlock email notifications.
 
 Parameters:
   SenderEmail:
